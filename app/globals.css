@@ -334,7 +334,8 @@ body {
 }
 .tab:hover { color: var(--text); }
 .tab.is-on { color: var(--accent); background: var(--panel-2); border-color: var(--line); border-bottom-color: var(--panel-2); }
-.tabpanel { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; border-top: 1px solid var(--line); }
+.tabpanel { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 12px; }
 
 /* Effects tab placeholder */
 .effects-soon {

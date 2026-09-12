@@ -9,7 +9,7 @@ import { getWaveformPeaks } from "../lib/waveform";
 import { renderVideo, cancelRender, getActiveRender, reconnectRender, probeBackend } from "../lib/serverRender";
 import { renderWebCodecs, webCodecsCanRender, pickRenderProfile, startKeepAwake } from "../lib/webcodecsRender";
 import { DEFAULT_TRANSITION_DURATION, mixTransitions } from "../lib/transitions";
-import { parseTranscript } from "../lib/captions";
+import { parseTranscript, captionPosPct } from "../lib/captions";
 import Dropzone from "../components/Dropzone";
 import Editor from "../components/Editor";
 import ProjectsHome from "../components/ProjectsHome";
@@ -133,6 +133,7 @@ export default function Home() {
   const [trimByName, setTrimByName] = useState({});   // video clip name -> in-point seconds
   const [volumeByName, setVolumeByName] = useState({}); // video clip name -> 0..1 (default 0.5)
   const [fitByName, setFitByName] = useState({});     // video clip name -> "fit" (fast-fwd, default) | "trim" (1x)
+  const [effectByName, setEffectByName] = useState({}); // clip name -> { id, intensity } (per-clip effect override)
   const [trimEnd, setTrimEnd] = useState(0); // export end point (0 = untrimmed / full audio)
   const [captionRaw, setCaptionRaw] = useState(null); // uploaded transcript text
   const [captionName, setCaptionName] = useState(null);
@@ -142,7 +143,7 @@ export default function Home() {
   const [captionLineHeight, setCaptionLineHeight] = useState(null); // null = per-style default
   const [captionFontScale, setCaptionFontScale] = useState(null);   // null = use the size preset
   const [captionFont, setCaptionFont] = useState("default");        // caption font id (CAPTION_FONTS)
-  const [captionPosition, setCaptionPosition] = useState("bottom"); // top | middle | bottom
+  const [captionPosition, setCaptionPosition] = useState(0); // vertical %: 100=top, 50=mid, 0=bottom
   const [importing, setImporting] = useState(null);   // { done, total } while decoding imports
   const [built, setBuilt] = useState(false);          // committed images to the timeline?
   const [busy, setBusy] = useState(false);
@@ -323,6 +324,13 @@ export default function Home() {
   const setFit = useCallback((name, mode) => {
     setFitByName((prev) => ({ ...prev, [name]: mode }));
   }, []);
+  // Per-clip effect override: patch merges into { id:"none", intensity:0.5 }.
+  const setClipEffect = useCallback((name, patch) => {
+    setEffectByName((prev) => ({ ...prev, [name]: { id: "none", intensity: 0.5, ...(prev[name] || {}), ...patch } }));
+  }, []);
+  const removeClipEffect = useCallback((name) => {
+    setEffectByName((prev) => { const next = { ...prev }; delete next[name]; return next; });
+  }, []);
   const applyMotionAll = useCallback((type, names) => {
     setMotionByName(() => { const next = {}; for (const n of names) next[n] = type; return next; });
   }, []);
@@ -462,11 +470,11 @@ export default function Home() {
     setAspect("16:9"); setFps(coarse ? 24 : 30); setRenderQuality(coarse ? "720p" : "full");
     setTransitionDuration(DEFAULT_TRANSITION_DURATION); setFadeIn(0.5); setFadeOut(0.6);
     setEffectId("none"); setEffectIntensity(0.5);
-    setMotionByName({}); setMotionAmount(0.08); setTrimByName({}); setVolumeByName({}); setFitByName({});
+    setMotionByName({}); setMotionAmount(0.08); setTrimByName({}); setVolumeByName({}); setFitByName({}); setEffectByName({});
     setTrimEnd(0);
     setCaptionRaw(null); setCaptionName(null); setCaptionsOn(false); setCaptionStyle("classic");
     setCaptionSize("md"); setCaptionLineHeight(null); setCaptionFontScale(null);
-    setCaptionFont("default"); setCaptionPosition("bottom");
+    setCaptionFont("default"); setCaptionPosition(0);
     setError(null); setOutUrl(null); setProgress(0);
     idRef.current = 0;
     resetDoc({ slots: [], transitionsByName: {} });
@@ -498,7 +506,7 @@ export default function Home() {
   const buildProjectData = useCallback(() => ({
     v: 1,
     settings: { aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, motionAmount, trimEnd, effectId, effectIntensity },
-    maps: { motionByName, trimByName, volumeByName, fitByName },
+    maps: { motionByName, trimByName, volumeByName, fitByName, effectByName },
     captions: { captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition },
     transitionsByName,
     slots: slots.map((s) => ({
@@ -510,7 +518,7 @@ export default function Home() {
     idCounter: idRef.current,
     built,
   }), [aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, effectId, effectIntensity, motionAmount, trimEnd,
-      motionByName, trimByName, volumeByName, fitByName,
+      motionByName, trimByName, volumeByName, fitByName, effectByName,
       captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale,
       captionFont, captionPosition,
       transitionsByName, slots, audioFile, built]);
@@ -540,7 +548,7 @@ export default function Home() {
     const t = setTimeout(() => { if (saveRef.current) saveRef.current(); }, 1200);
     return () => clearTimeout(t);
   }, [view, currentProject, loadingProject, slots, transitionsByName, aspect, fps, renderQuality, transitionDuration,
-      fadeIn, fadeOut, effectId, effectIntensity, motionByName, motionAmount, trimByName, volumeByName, fitByName, trimEnd,
+      fadeIn, fadeOut, effectId, effectIntensity, motionByName, motionAmount, trimByName, volumeByName, fitByName, effectByName, trimEnd,
       captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale,
       captionFont, captionPosition,
       audioFile, built]);
@@ -591,12 +599,13 @@ export default function Home() {
       const mp = d.maps || {};
       setMotionByName(mp.motionByName || {}); setTrimByName(mp.trimByName || {});
       setVolumeByName(mp.volumeByName || {}); setFitByName(mp.fitByName || {});
+      setEffectByName(mp.effectByName || {});
       const cp = d.captions || {};
       setCaptionRaw(cp.captionRaw ?? null); setCaptionName(cp.captionName ?? null);
       setCaptionsOn(!!cp.captionsOn); setCaptionStyle(cp.captionStyle ?? "classic");
       setCaptionSize(cp.captionSize ?? "md"); setCaptionLineHeight(cp.captionLineHeight ?? null);
       setCaptionFontScale(cp.captionFontScale ?? null);
-      setCaptionFont(cp.captionFont ?? "default"); setCaptionPosition(cp.captionPosition ?? "bottom");
+      setCaptionFont(cp.captionFont ?? "default"); setCaptionPosition(captionPosPct(cp.captionPosition ?? 0));
       idRef.current = d.idCounter || newSlots.length;
       setBuilt(!!d.built);
     } finally { setLoadingProject(false); }
@@ -681,7 +690,7 @@ export default function Home() {
       const blob = await renderVideo({
         clips: exportClips, imagesByName, videosByName, audioFile,
         width: renderDims.width, height: renderDims.height, fps,
-        transitions, transitionDuration, motions, motionAmount, trims, volumes, speeds, fadeIn, fadeOut, effectId, effectIntensity,
+        transitions, transitionDuration, motions, motionAmount, trims, volumes, speeds, fadeIn, fadeOut, effectId, effectIntensity, effectByName,
         captions, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition,
         onProgress: setProgress,
       });
@@ -692,7 +701,7 @@ export default function Home() {
       if (!cancelRef.current) setBusy(false);
     }
   }, [clips, exportDuration, imagesByName, videosByName, audioFile, renderDims, fps, transitionsByName, transitionDuration,
-      motionByName, motionAmount, trimByName, volumeByName, fitByName, videoInfoByName, fadeIn, fadeOut, effectId, effectIntensity,
+      motionByName, motionAmount, trimByName, volumeByName, fitByName, videoInfoByName, fadeIn, fadeOut, effectId, effectIntensity, effectByName,
       captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition]);
 
   // --- SPIKE: WebCodecs GPU render (video-only, no audio). Proves the pipeline. ---
@@ -784,7 +793,7 @@ export default function Home() {
           videosByName, trims, speeds, volumes,
           cues: captionsOn && captionCues.length ? captionCues : null,
           captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition,
-          effectId, effectIntensity,
+          effectId, effectIntensity, effectByName,
         },
         imagesByName,
         (frac, phase) => { setWcProgress(frac); if (phase) setWcPhase(phase); },
@@ -849,7 +858,7 @@ export default function Home() {
       setWcProgress(0);
       setWcPhase("Rendering");
     }
-  }, [clips, exportDuration, transitionsByName, motionByName, imagesByName, renderDims, fps, transitionDuration, motionAmount, effectId, effectIntensity, audioFile,
+  }, [clips, exportDuration, transitionsByName, motionByName, imagesByName, renderDims, fps, transitionDuration, motionAmount, effectId, effectIntensity, effectByName, audioFile,
       videosByName, videoInfoByName, fitByName, trimByName, volumeByName, currentProject, flashDone, wcProfile,
       captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition]);
 
@@ -1082,6 +1091,7 @@ export default function Home() {
           effectIntensity={effectIntensity} setEffectIntensity={setEffectIntensity}
           fadeOut={fadeOut} setFadeOut={setFadeOut}
           motionByName={motionByName} setMotion={setMotion}
+          effectByName={effectByName} setClipEffect={setClipEffect} removeClipEffect={removeClipEffect}
           applyMotionAll={applyMotionAll} applyMotionAlternate={applyMotionAlternate}
           motionAmount={motionAmount} setMotionAmount={setMotionAmount}
           videoInfoByName={videoInfoByName}

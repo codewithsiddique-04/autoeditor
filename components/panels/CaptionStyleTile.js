@@ -14,7 +14,7 @@ export default function CaptionStyleTile({ st, fontFamily, on, onClick }) {
     const g = ctx.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, "#4a4a52"); g.addColorStop(1, "#2a2a30");
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    drawCaption(ctx, "Aa", W, H, st.id, Math.round(H * 0.34), 1.16, fontFamily || "CaptionFont", "middle");
+    drawCaption(ctx, "Aa", W, H, st.id, Math.round(H * 0.34), 1.16, fontFamily || "CaptionFont", 50);
   }, [st.id, fontFamily]);
 
   return (

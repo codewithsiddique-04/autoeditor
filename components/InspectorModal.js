@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { tc } from "../lib/format";
+import EffectsPanel from "./panels/EffectsPanel";
 
 export default function InspectorModal({
   inspect, onClose,
@@ -7,6 +8,7 @@ export default function InspectorModal({
   videoInfoByName, volumeByName, setVolume,
   trimByName, setTrim, fitByName, setFit,
   motionByName, setMotion,
+  effectByName = {}, setClipEffect, removeClipEffect,
   replaceImage, removeImage,
   coarse,
 }) {
@@ -64,6 +66,8 @@ export default function InspectorModal({
   // Default by length: longer clip trims (1x), shorter fills the slot (fit/slow).
   const fitMode = fitByName[inspect] || (longer ? "trim" : "fit");
   const speed = (diff && slotDur > 0) ? (vdur / slotDur) : 1;
+  const clipFx = effectByName[inspect];   // { id, intensity } | undefined
+  const clipFxOn = !!clipFx;
 
   return (
     <>
@@ -121,6 +125,34 @@ export default function InspectorModal({
             </div>
           )}
 
+          {insClip && !insClip.gap && (
+            <div className="modal__motion">
+              <div className="cap-bar" style={{ justifyContent: "space-between", ...(clipFxOn ? {} : { borderBottom: "none", paddingBottom: 0, marginBottom: 0 }) }}>
+                <span className="modal__motion-label" style={{ marginBottom: 0 }}>
+                  Effect — overrides the video effect
+                </span>
+                <button
+                  type="button"
+                  className={`cap-switch ${clipFxOn ? "is-on" : ""}`}
+                  onClick={() => (clipFxOn ? removeClipEffect && removeClipEffect(inspect) : setClipEffect && setClipEffect(inspect, {}))}
+                  aria-pressed={clipFxOn}
+                >
+                  <span className="cap-switch__box" />
+                  {clipFxOn ? "On" : "Off"}
+                </button>
+              </div>
+              {clipFxOn && (
+                <EffectsPanel
+                  bare
+                  effectId={clipFx.id}
+                  setEffectId={(id) => setClipEffect(inspect, { id })}
+                  effectIntensity={clipFx.intensity}
+                  setEffectIntensity={(v) => setClipEffect(inspect, { intensity: v })}
+                />
+              )}
+            </div>
+          )}
+
           {insClip && !insClip.gap && isVid && (
             <div className="modal__vid">
               {diff && (
@@ -140,8 +172,8 @@ export default function InspectorModal({
                   </div>
                   {fitMode === "fit"
                     ? <span className="modal__hint">{longer
-                        ? `Whole clip fast-forwarded at ${speed.toFixed(1)}× to fit the slot.`
-                        : `Whole clip slowed to ${speed.toFixed(2)}× to fill the slot.`}</span>
+                      ? `Whole clip fast-forwarded at ${speed.toFixed(1)}× to fit the slot.`
+                      : `Whole clip slowed to ${speed.toFixed(2)}× to fill the slot.`}</span>
                     : <span className="modal__hint">Plays at 1× — set a start point below;{longer ? " the rest is cut off." : " the last frame then holds to fill the slot."}</span>}
                 </div>
               )}

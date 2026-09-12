@@ -1,12 +1,15 @@
 import { EFFECT_LIST } from "../../lib/effects";
 import EffectTile from "./EffectTile";
 
-export default function EffectsPanel({ effectId, setEffectId, effectIntensity, setEffectIntensity }) {
+// bare: render just the grid + intensity (no panel card/heading), for embedding
+// (e.g. the per-clip effect override in the clip inspector).
+export default function EffectsPanel({
+  effectId, setEffectId, effectIntensity, setEffectIntensity,
+  bare = false, subtitle = "One effect applies to the whole video.",
+}) {
   const active = effectId && effectId !== "none";
-  return (
-    <div className="panel">
-      <h2 className="panel__h">Atmosphere &amp; Genre FX</h2>
-      <div className="mini-h">One effect applies to the whole video.</div>
+  const body = (
+    <>
       <div className="trgrid">
         {EFFECT_LIST.map((fx) => (
           <EffectTile
@@ -26,6 +29,16 @@ export default function EffectsPanel({ effectId, setEffectId, effectIntensity, s
         />
         <span className="trdur__val">{Math.round(effectIntensity * 100)}%</span>
       </label>
+    </>
+  );
+
+  if (bare) return body;
+
+  return (
+    <div className="panel">
+      <h2 className="panel__h">Atmosphere &amp; Genre FX</h2>
+      <div className="mini-h">{subtitle}</div>
+      {body}
     </div>
   );
 }

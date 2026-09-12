@@ -23,6 +23,7 @@ export default function Editor({
   transitionsByName, transitionDuration, setTransition, applyTransitionAll, applyTransitionMix, setTransitionDuration,
   fadeIn, setFadeIn, fadeOut, setFadeOut,
   effectId, setEffectId, effectIntensity, setEffectIntensity,
+  effectByName = {}, setClipEffect, removeClipEffect,
   motionByName, setMotion, applyMotionAll, applyMotionAlternate, motionAmount, setMotionAmount,
   videoInfoByName = {}, trimByName = {}, setTrim, volumeByName = {}, setVolume,
   fitByName = {}, setFit,
@@ -222,7 +223,10 @@ export default function Editor({
     }
 
     // Atmosphere effect over the frame (before captions so captions stay crisp).
-    applyEffect(ctx, effectId, effectIntensity, W, H, t);
+    // A per-clip override wins over the global effect for the clip under the playhead.
+    const fxClip = clips.find((c) => t >= c.start && t < c.start + c.duration) || clips[clips.length - 1];
+    const ov = fxClip && effectByName[fxClip.name];
+    applyEffect(ctx, ov ? ov.id : effectId, ov ? ov.intensity : effectIntensity, W, H, t);
 
     // Captions burn in before the fades, so the fade dims them too.
     if (captionsOn && captionCues && captionCues.length) {
@@ -241,7 +245,7 @@ export default function Editor({
       ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
     }
   }, [clips, imageEls, transitionsByName, transitionDuration, motionByName, motionAmount,
-      fadeIn, fadeOut, effectId, effectIntensity, duration, exportDuration, playing, videoInfoByName, videoParams, volumeByName,
+      fadeIn, fadeOut, effectId, effectIntensity, effectByName, duration, exportDuration, playing, videoInfoByName, videoParams, volumeByName,
       captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale,
       captionFont, captionPosition]);
 
@@ -375,6 +379,7 @@ export default function Editor({
             { id: "motion", label: "Motion", node: (
               <MotionPanel
                 imageClips={imageClips}
+                motionByName={motionByName}
                 motionAmount={motionAmount} setMotionAmount={setMotionAmount}
                 applyMotionAll={applyMotionAll} applyMotionAlternate={applyMotionAlternate}
                 fadeIn={fadeIn} setFadeIn={setFadeIn} fadeOut={fadeOut} setFadeOut={setFadeOut}
@@ -530,6 +535,7 @@ export default function Editor({
         videoInfoByName={videoInfoByName} volumeByName={volumeByName} setVolume={setVolume}
         trimByName={trimByName} setTrim={setTrim} fitByName={fitByName} setFit={setFit}
         motionByName={motionByName} setMotion={setMotion}
+        effectByName={effectByName} setClipEffect={setClipEffect} removeClipEffect={removeClipEffect}
         replaceImage={replaceImage} removeImage={removeImage}
         coarse={coarse}
       />

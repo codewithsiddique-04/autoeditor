@@ -1,7 +1,7 @@
 import { useCallback, useRef } from "react";
 import {
   CAPTION_STYLE_LIST, CAPTION_SIZES, captionLineHeightDefault,
-  CAPTION_FONTS, captionFontFamily,
+  CAPTION_FONTS, captionFontFamily, captionPosPct as posPct,
 } from "../../lib/captions";
 import CaptionStyleTile from "./CaptionStyleTile";
 
@@ -86,17 +86,25 @@ export default function CaptionsPanel({
                 ))}
               </div>
 
-              <div className="mini-h" style={{ marginTop: 12 }}>Position</div>
+              <div className="mini-h" style={{ marginTop: 16 }}>Vertical position (100% = top, 0% = bottom)</div>
               <div className="seg">
-                {[["top", "Top"], ["middle", "Middle"], ["bottom", "Bottom"]].map(([id, lbl]) => (
+                {[[100, "Top"], [50, "Middle"], [0, "Bottom"]].map(([v, lbl]) => (
                   <button
-                    key={id}
+                    key={lbl}
                     type="button"
-                    className={captionPosition === id ? "is-on" : ""}
-                    onClick={() => setCaptionPosition(id)}
+                    className={Math.round(posPct(captionPosition)) === v ? "is-on" : ""}
+                    onClick={() => setCaptionPosition(v)}
                   >{lbl}</button>
                 ))}
               </div>
+              <label className="trdur">
+                <input
+                  type="range" min={0} max={100} step={1}
+                  value={posPct(captionPosition)}
+                  onChange={(e) => setCaptionPosition(+e.target.value)}
+                />
+                <span className="trdur__val">{Math.round(posPct(captionPosition))}%</span>
+              </label>
 
               <div className="mini-h" style={{ marginTop: 12 }}>Size</div>
               <div className="seg">
@@ -140,7 +148,7 @@ export default function CaptionsPanel({
               </label>
               {captionLineHeight != null && (
                 <button type="button" className="cap-replace" onClick={() => setCaptionLineHeight && setCaptionLineHeight(null)}>
-                  reset to default
+                  Reset to default
                 </button>
               )}
             </div>
