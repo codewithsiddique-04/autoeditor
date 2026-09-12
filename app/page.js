@@ -139,6 +139,8 @@ export default function Home() {
   const [captionSize, setCaptionSize] = useState("md");
   const [captionLineHeight, setCaptionLineHeight] = useState(null); // null = per-style default
   const [captionFontScale, setCaptionFontScale] = useState(null);   // null = use the size preset
+  const [captionFont, setCaptionFont] = useState("default");        // caption font id (CAPTION_FONTS)
+  const [captionPosition, setCaptionPosition] = useState("bottom"); // top | middle | bottom
   const [importing, setImporting] = useState(null);   // { done, total } while decoding imports
   const [built, setBuilt] = useState(false);          // committed images to the timeline?
   const [busy, setBusy] = useState(false);
@@ -461,6 +463,7 @@ export default function Home() {
     setTrimEnd(0);
     setCaptionRaw(null); setCaptionName(null); setCaptionsOn(false); setCaptionStyle("classic");
     setCaptionSize("md"); setCaptionLineHeight(null); setCaptionFontScale(null);
+    setCaptionFont("default"); setCaptionPosition("bottom");
     setError(null); setOutUrl(null); setProgress(0);
     idRef.current = 0;
     resetDoc({ slots: [], transitionsByName: {} });
@@ -493,7 +496,7 @@ export default function Home() {
     v: 1,
     settings: { aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, motionAmount, trimEnd },
     maps: { motionByName, trimByName, volumeByName, fitByName },
-    captions: { captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale },
+    captions: { captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition },
     transitionsByName,
     slots: slots.map((s) => ({
       id: s.id, seconds: s.seconds, empty: !!s.empty,
@@ -506,6 +509,7 @@ export default function Home() {
   }), [aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, motionAmount, trimEnd,
       motionByName, trimByName, volumeByName, fitByName,
       captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale,
+      captionFont, captionPosition,
       transitionsByName, slots, audioFile, built]);
 
   const saveCurrent = useCallback(async () => {
@@ -535,6 +539,7 @@ export default function Home() {
   }, [view, currentProject, loadingProject, slots, transitionsByName, aspect, fps, renderQuality, transitionDuration,
       fadeIn, fadeOut, motionByName, motionAmount, trimByName, volumeByName, fitByName, trimEnd,
       captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale,
+      captionFont, captionPosition,
       audioFile, built]);
 
   const openProject = useCallback(async (id) => {
@@ -587,6 +592,7 @@ export default function Home() {
       setCaptionsOn(!!cp.captionsOn); setCaptionStyle(cp.captionStyle ?? "classic");
       setCaptionSize(cp.captionSize ?? "md"); setCaptionLineHeight(cp.captionLineHeight ?? null);
       setCaptionFontScale(cp.captionFontScale ?? null);
+      setCaptionFont(cp.captionFont ?? "default"); setCaptionPosition(cp.captionPosition ?? "bottom");
       idRef.current = d.idCounter || newSlots.length;
       setBuilt(!!d.built);
     } finally { setLoadingProject(false); }
@@ -672,7 +678,7 @@ export default function Home() {
         clips: exportClips, imagesByName, videosByName, audioFile,
         width: renderDims.width, height: renderDims.height, fps,
         transitions, transitionDuration, motions, motionAmount, trims, volumes, speeds, fadeIn, fadeOut,
-        captions, captionStyle, captionSize, captionLineHeight, captionFontScale,
+        captions, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition,
         onProgress: setProgress,
       });
       setOutUrl(URL.createObjectURL(blob));
@@ -683,7 +689,7 @@ export default function Home() {
     }
   }, [clips, exportDuration, imagesByName, videosByName, audioFile, renderDims, fps, transitionsByName, transitionDuration,
       motionByName, motionAmount, trimByName, volumeByName, fitByName, videoInfoByName, fadeIn, fadeOut,
-      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale]);
+      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition]);
 
   // --- SPIKE: WebCodecs GPU render (video-only, no audio). Proves the pipeline. ---
   const [wcBusy, setWcBusy] = useState(false);
@@ -773,7 +779,7 @@ export default function Home() {
           transitions, transitionDuration, motions, motionAmount, audioFile,
           videosByName, trims, speeds, volumes,
           cues: captionsOn && captionCues.length ? captionCues : null,
-          captionStyle, captionSize, captionLineHeight, captionFontScale,
+          captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition,
         },
         imagesByName,
         (frac, phase) => { setWcProgress(frac); if (phase) setWcPhase(phase); },
@@ -840,7 +846,7 @@ export default function Home() {
     }
   }, [clips, exportDuration, transitionsByName, motionByName, imagesByName, renderDims, fps, transitionDuration, motionAmount, audioFile,
       videosByName, videoInfoByName, fitByName, trimByName, volumeByName, currentProject, flashDone, wcProfile,
-      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale]);
+      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition]);
 
   // Browser can't export video (no H.264 WebCodecs, no render backend) — block the
   // whole app; there's no point letting them create projects they can't render.
@@ -1082,6 +1088,8 @@ export default function Home() {
           captionSize={captionSize} setCaptionSize={setCaptionSize}
           captionLineHeight={captionLineHeight} setCaptionLineHeight={setCaptionLineHeight}
           captionFontScale={captionFontScale} setCaptionFontScale={setCaptionFontScale}
+          captionFont={captionFont} setCaptionFont={setCaptionFont}
+          captionPosition={captionPosition} setCaptionPosition={setCaptionPosition}
           captionName={captionName} captionError={captionError} onCaptionFile={onCaptionFile}
         />
       )}
