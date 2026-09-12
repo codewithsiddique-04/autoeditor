@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Timeline from "./Timeline";
 import { transitionOf } from "../lib/transitions";
-import { captionAt, drawCaption, captionFontPx } from "../lib/captions";
+import { captionAt, drawCaption, captionFontPx, captionFontFamily } from "../lib/captions";
 import { tc, clock } from "../lib/format";
 import ExportPanel from "./panels/ExportPanel";
 import TransitionsPanel from "./panels/TransitionsPanel";
@@ -29,6 +29,7 @@ export default function Editor({
   captionCues, captionsOn, setCaptionsOn, captionStyle, setCaptionStyle,
   captionSize, setCaptionSize, captionLineHeight, setCaptionLineHeight,
   captionFontScale, setCaptionFontScale,
+  captionFont, setCaptionFont, captionPosition, setCaptionPosition,
   captionName, captionError, onCaptionFile,
 }) {
   const canvasRef = useRef(null);
@@ -221,7 +222,7 @@ export default function Editor({
     // Captions burn in before the fades, so the fade dims them too.
     if (captionsOn && captionCues && captionCues.length) {
       const txt = captionAt(captionCues, t);
-      if (txt) drawCaption(ctx, txt, W, H, captionStyle, captionFontPx(H, captionSize, captionFontScale), captionLineHeight);
+      if (txt) drawCaption(ctx, txt, W, H, captionStyle, captionFontPx(H, captionSize, captionFontScale), captionLineHeight, captionFontFamily(captionFont), captionPosition);
     }
 
     // Scene fades (opening / ending).
@@ -236,7 +237,8 @@ export default function Editor({
     }
   }, [clips, imageEls, transitionsByName, transitionDuration, motionByName, motionAmount,
       fadeIn, fadeOut, duration, exportDuration, playing, videoInfoByName, videoParams, volumeByName,
-      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale]);
+      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale,
+      captionFont, captionPosition]);
 
   useEffect(() => { drawRef.current = draw; }, [draw]);
   useEffect(() => { timeRef.current = time; }, [time]);
@@ -389,6 +391,8 @@ export default function Editor({
                 captionSize={captionSize} setCaptionSize={setCaptionSize}
                 captionLineHeight={captionLineHeight} setCaptionLineHeight={setCaptionLineHeight}
                 captionFontScale={captionFontScale} setCaptionFontScale={setCaptionFontScale}
+                captionFont={captionFont} setCaptionFont={setCaptionFont}
+                captionPosition={captionPosition} setCaptionPosition={setCaptionPosition}
                 captionName={captionName} captionError={captionError} onCaptionFile={onCaptionFile}
               />
             ) },
