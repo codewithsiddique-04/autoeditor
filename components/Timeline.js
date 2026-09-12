@@ -148,8 +148,10 @@ export default function Timeline({
     return (x / r.width) * duration;
   }, [duration]);
 
-  // Click empty FX lane -> place the selected sound there.
+  // Click EMPTY FX lane -> place the selected sound there. Ignore presses that
+  // land on a marker (or its children) so dragging a marker never adds a copy.
   const onSfxLaneDown = useCallback((e) => {
+    if (e.target !== e.currentTarget) return;
     if (onSfxAdd) onSfxAdd(+sfxTimeAt(e.clientX).toFixed(3));
   }, [onSfxAdd, sfxTimeAt]);
 
@@ -324,7 +326,7 @@ export default function Timeline({
                 title={`${s.name} · ${label(s.at)}`}
                 onPointerDown={(e) => onSfxDown(e, s.id)}
               >
-                <span className="sfxmark__dot" />
+                <span className="sfxmark__line" />
                 <span className="sfxmark__label">{s.name}</span>
               </button>
             ))}

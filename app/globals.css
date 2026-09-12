@@ -554,22 +554,29 @@ body {
 .tl__lane--audio { height: 40px; margin-top: 6px; }
 /* Sound-effects lane: markers you place, drag, and click to edit. */
 .tl__lane--fx { height: 26px; margin-top: 6px; background: var(--panel-2); cursor: copy; }
+/* Anchored at the exact trigger time: a thin line marks where the sound fires,
+   with the label sitting to its right (so it lines up with the playhead). */
 .sfxmark {
-  position: absolute; top: 0; bottom: 0; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 4px; padding: 0 3px;
+  position: absolute; top: 0; bottom: 0;
+  display: flex; align-items: center; gap: 3px; padding: 0;
   background: none; border: none; cursor: grab; z-index: 2;
 }
-.sfxmark:active { cursor: grabbing; }
-.sfxmark__dot {
-  flex: none; width: 10px; height: 10px; border-radius: 50%;
-  background: var(--green); box-shadow: 0 0 0 1px rgba(0,0,0,.45);
+/* Widen the grab area around the thin line without shifting where it sits. */
+.sfxmark::before {
+  content: ""; position: absolute; top: 0; bottom: 0; left: -6px; width: 12px;
 }
-.sfxmark:hover .sfxmark__dot { background: var(--accent); }
+.sfxmark:active { cursor: grabbing; }
+.sfxmark__line {
+  flex: none; width: 2px; align-self: stretch; border-radius: 1px;
+  background: var(--green);
+}
+.sfxmark:hover .sfxmark__line { background: var(--accent); }
 .sfxmark__label {
   font-size: 10px; line-height: 1; color: #eef1f7; white-space: nowrap;
-  background: rgba(6,8,11,.75); padding: 2px 5px; border-radius: 4px;
+  background: rgba(6,8,11,.78); padding: 2px 5px; border-radius: 4px;
   max-width: 120px; overflow: hidden; text-overflow: ellipsis;
 }
+.sfxmark:hover .sfxmark__label { color: #fff; }
 .tl__tag {
   display: grid; place-items: center; height: 62px; width: 22px;
   font-family: var(--font-mono); font-size: 11px; color: var(--faint);
