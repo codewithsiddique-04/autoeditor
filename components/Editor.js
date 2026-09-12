@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Timeline from "./Timeline";
 import { transitionOf } from "../lib/transitions";
+import { applyEffect } from "../lib/effects";
 import { captionAt, drawCaption, captionFontPx, captionFontFamily } from "../lib/captions";
 import { tc, clock } from "../lib/format";
 import ExportPanel from "./panels/ExportPanel";
@@ -21,6 +22,7 @@ export default function Editor({
   replaceImage, removeImage, fillGap, resizeBoundary,
   transitionsByName, transitionDuration, setTransition, applyTransitionAll, applyTransitionMix, setTransitionDuration,
   fadeIn, setFadeIn, fadeOut, setFadeOut,
+  effectId, setEffectId, effectIntensity, setEffectIntensity,
   motionByName, setMotion, applyMotionAll, applyMotionAlternate, motionAmount, setMotionAmount,
   videoInfoByName = {}, trimByName = {}, setTrim, volumeByName = {}, setVolume,
   fitByName = {}, setFit,
@@ -219,6 +221,9 @@ export default function Editor({
       if (nm !== activeVideo && !v.paused) { try { v.pause(); } catch { /* ignore */ } }
     }
 
+    // Atmosphere effect over the frame (before captions so captions stay crisp).
+    applyEffect(ctx, effectId, effectIntensity, W, H, t);
+
     // Captions burn in before the fades, so the fade dims them too.
     if (captionsOn && captionCues && captionCues.length) {
       const txt = captionAt(captionCues, t);
@@ -236,7 +241,7 @@ export default function Editor({
       ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
     }
   }, [clips, imageEls, transitionsByName, transitionDuration, motionByName, motionAmount,
-      fadeIn, fadeOut, duration, exportDuration, playing, videoInfoByName, videoParams, volumeByName,
+      fadeIn, fadeOut, effectId, effectIntensity, duration, exportDuration, playing, videoInfoByName, videoParams, volumeByName,
       captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale,
       captionFont, captionPosition]);
 
@@ -396,7 +401,12 @@ export default function Editor({
                 captionName={captionName} captionError={captionError} onCaptionFile={onCaptionFile}
               />
             ) },
-            { id: "effects", label: "Effects", node: <EffectsPanel /> },
+            { id: "effects", label: "Effects", node: (
+              <EffectsPanel
+                effectId={effectId} setEffectId={setEffectId}
+                effectIntensity={effectIntensity} setEffectIntensity={setEffectIntensity}
+              />
+            ) },
           ]}
         />
         <div
