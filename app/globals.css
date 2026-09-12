@@ -535,12 +535,31 @@ body {
 .tl__lane { position: relative; border-radius: 8px; background: var(--panel-2); overflow: hidden; }
 .tl__lane--video { height: 62px; }
 .tl__lane--audio { height: 40px; margin-top: 6px; }
+/* Sound-effects lane: markers you place, drag, and click to edit. */
+.tl__lane--fx { height: 26px; margin-top: 6px; background: var(--panel-2); cursor: copy; }
+.sfxmark {
+  position: absolute; top: 0; bottom: 0; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 4px; padding: 0 3px;
+  background: none; border: none; cursor: grab; z-index: 2;
+}
+.sfxmark:active { cursor: grabbing; }
+.sfxmark__dot {
+  flex: none; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--green); box-shadow: 0 0 0 1px rgba(0,0,0,.45);
+}
+.sfxmark:hover .sfxmark__dot { background: var(--accent); }
+.sfxmark__label {
+  font-size: 10px; line-height: 1; color: #eef1f7; white-space: nowrap;
+  background: rgba(6,8,11,.75); padding: 2px 5px; border-radius: 4px;
+  max-width: 120px; overflow: hidden; text-overflow: ellipsis;
+}
 .tl__tag {
   display: grid; place-items: center; height: 62px; width: 22px;
   font-family: var(--font-mono); font-size: 11px; color: var(--faint);
   background: var(--panel-2); border-radius: 6px;
 }
 .tl__tag--audio { height: 40px; color: var(--teal); }
+.tl__tag--fx { height: 26px; color: var(--faint); }
 
 .clip {
   position: absolute; top: 0; bottom: 0; min-width: 2px;

@@ -35,6 +35,7 @@ export default function Timeline({
   transitionsByName, motionByName, selectedName, onSelect,
   onSeek, onScrubStart, onScrubEnd, onOpen, onAdd, onResizeBoundary,
   trimEnd, onTrimChange,
+  sfx = [], onSfxAdd, onSfxMove, onSfxOpen,
 }) {
   const trackRef = useRef(null);
   const downRef = useRef(null); // pointer-down position, to tell a clip tap from a drag
@@ -138,6 +139,38 @@ export default function Timeline({
     window.addEventListener("pointerup", up);
   }, [boundaryAt, clips, onResizeBoundary]);
 
+  // Map a pointer x to a time on the track (for the FX lane).
+  const sfxTimeAt = useCallback((clientX) => {
+    const el = trackRef.current;
+    if (!el || !duration) return 0;
+    const r = el.getBoundingClientRect();
+    const x = Math.min(Math.max(clientX - r.left, 0), r.width);
+    return (x / r.width) * duration;
+  }, [duration]);
+
+  // Click empty FX lane -> place the selected sound there.
+  const onSfxLaneDown = useCallback((e) => {
+    if (onSfxAdd) onSfxAdd(+sfxTimeAt(e.clientX).toFixed(3));
+  }, [onSfxAdd, sfxTimeAt]);
+
+  // Drag a marker to move it; a clean click opens its editor.
+  const onSfxDown = useCallback((e, id) => {
+    e.stopPropagation();
+    const start = { x: e.clientX, y: e.clientY };
+    let moved = false;
+    const move = (ev) => {
+      if (!moved && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 4) moved = true;
+      if (moved && onSfxMove) onSfxMove(id, +sfxTimeAt(ev.clientX).toFixed(3));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      if (!moved && onSfxOpen) onSfxOpen(id);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }, [sfxTimeAt, onSfxMove, onSfxOpen]);
+
   // A clip opens the inspector only on a clean tap, not a drag/scroll.
   const onClipClick = useCallback((name, e) => {
     const d = downRef.current;
@@ -204,6 +237,7 @@ export default function Timeline({
         <div className="tl__gutter">
           <span className="tl__tag">V</span>
           <span className="tl__tag tl__tag--audio">A</span>
+          <span className="tl__tag tl__tag--fx">FX</span>
         </div>
 
         <div className="tl__track" ref={trackRef}>
@@ -274,6 +308,26 @@ export default function Timeline({
 
           <div className="tl__lane tl__lane--audio tl__scrub" onPointerDown={onScrubDown}>
             <Waveform peaks={peaks} />
+          </div>
+
+          <div
+            className="tl__lane tl__lane--fx"
+            onPointerDown={onSfxLaneDown}
+            title="Click to place the selected sound · drag a marker to move · click a marker to edit"
+          >
+            {sfx.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className="sfxmark"
+                style={{ left: pct(s.at) }}
+                title={`${s.name} · ${label(s.at)}`}
+                onPointerDown={(e) => onSfxDown(e, s.id)}
+              >
+                <span className="sfxmark__dot" />
+                <span className="sfxmark__label">{s.name}</span>
+              </button>
+            ))}
           </div>
 
           <div className="tl__playhead" style={{ left: pct(time) }}>
