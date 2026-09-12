@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Timeline from "./Timeline";
 import { transitionOf } from "../lib/transitions";
 import { applyEffect } from "../lib/effects";
+import { preloadSfx, fireSfx, stopAllSfx, resumeSfx } from "../lib/sfxScheduler";
+import AudioPanel from "./panels/AudioPanel";
 import { captionAt, drawCaption, captionFontPx, captionFontFamily } from "../lib/captions";
 import { tc, clock } from "../lib/format";
 import ExportPanel from "./panels/ExportPanel";
@@ -24,6 +26,8 @@ export default function Editor({
   fadeIn, setFadeIn, fadeOut, setFadeOut,
   effectId, setEffectId, effectIntensity, setEffectIntensity,
   effectByName = {}, setClipEffect, removeClipEffect,
+  sfx = [], sfxResolved = [], sfxUploads = [], selectedSound, setSelectedSound,
+  addSfx, moveSfx, setSfxVolume, removeSfx, uploadSfx,
   motionByName, setMotion, applyMotionAll, applyMotionAlternate, motionAmount, setMotionAmount,
   videoInfoByName = {}, trimByName = {}, setTrim, volumeByName = {}, setVolume,
   fitByName = {}, setFit,
@@ -263,6 +267,12 @@ export default function Editor({
     return () => clearInterval(id);
   }, [busy, wcBusy]);
 
+  // Sound-effects preview: fire each placed SFX as the playhead crosses its time.
+  const sfxRef = useRef(sfxResolved);
+  useEffect(() => { sfxRef.current = sfxResolved; }, [sfxResolved]);
+  const prevSfxTimeRef = useRef(0);
+  const [sfxEdit, setSfxEdit] = useState(null); // sfx id open in the edit popover
+
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
@@ -274,11 +284,25 @@ export default function Editor({
         setTime(end);
         return;
       }
-      setTime(a.currentTime);
+      const cur = a.currentTime, prev = prevSfxTimeRef.current;
+      if (cur >= prev) {
+        for (const s of sfxRef.current) {
+          if (s.url && s.at > prev && s.at <= cur) fireSfx(s.url, s.volume);
+        }
+      }
+      prevSfxTimeRef.current = cur;
+      setTime(cur);
       rafRef.current = requestAnimationFrame(loop);
     };
-    const onPlay = () => { setPlaying(true); cancelAnimationFrame(rafRef.current); rafRef.current = requestAnimationFrame(loop); };
-    const onStop = () => { setPlaying(false); cancelAnimationFrame(rafRef.current); setTime(a.currentTime); };
+    const onPlay = () => {
+      setPlaying(true);
+      resumeSfx();
+      preloadSfx(sfxRef.current.map((s) => s.url));
+      prevSfxTimeRef.current = a.currentTime;
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    const onStop = () => { setPlaying(false); cancelAnimationFrame(rafRef.current); stopAllSfx(); setTime(a.currentTime); };
     a.addEventListener("play", onPlay);
     a.addEventListener("pause", onStop);
     a.addEventListener("ended", onStop);
@@ -305,6 +329,8 @@ export default function Editor({
     if (!a) return;
     const c = Math.min(Math.max(t, 0), duration || t || 0);
     setTime(c);
+    stopAllSfx();
+    prevSfxTimeRef.current = c; // don't retro-fire SFX between old and new positions
     if (a.seeking) pendingSeekRef.current = c;
     else { pendingSeekRef.current = null; try { a.currentTime = c; } catch (_) {} }
   }, [duration]);
@@ -328,6 +354,7 @@ export default function Editor({
     const a = audioRef.current;
     scrubResumeRef.current = !!(a && !a.paused);
     if (a && !a.paused) { try { a.pause(); } catch (_) {} }
+    stopAllSfx();
   }, []);
   const onScrubEnd = useCallback(() => {
     const a = audioRef.current;
@@ -410,6 +437,12 @@ export default function Editor({
               <EffectsPanel
                 effectId={effectId} setEffectId={setEffectId}
                 effectIntensity={effectIntensity} setEffectIntensity={setEffectIntensity}
+              />
+            ) },
+            { id: "audio", label: "Audio", node: (
+              <AudioPanel
+                selectedSound={selectedSound} setSelectedSound={setSelectedSound}
+                sfxUploads={sfxUploads} uploadSfx={uploadSfx}
               />
             ) },
           ]}
@@ -521,6 +554,7 @@ export default function Editor({
           onResizeBoundary={resizeBoundary}
           trimEnd={trimEnd}
           onTrimChange={setTrimEnd}
+          sfx={sfx} onSfxAdd={addSfx} onSfxMove={moveSfx} onSfxOpen={setSfxEdit}
         />
       </div>
 
@@ -539,6 +573,35 @@ export default function Editor({
         replaceImage={replaceImage} removeImage={removeImage}
         coarse={coarse}
       />
+
+      {sfxEdit != null && (() => {
+        const s = sfx.find((x) => x.id === sfxEdit);
+        if (!s) return null;
+        return (
+          <div className="modal" role="dialog" aria-modal="true" onClick={() => setSfxEdit(null)}>
+            <div className="modal__card" style={{ maxWidth: 380 }} onClick={(e) => e.stopPropagation()}>
+              <div className="modal__head">
+                <span className="modal__title">{s.name} <span className="modal__at">· {tc(s.at)}</span></span>
+                <button className="modal__x" onClick={() => setSfxEdit(null)} aria-label="Close">✕</button>
+              </div>
+              <div className="modal__vol">
+                <span className="modal__motion-label">Volume</span>
+                <div className="modal__slider">
+                  <input
+                    type="range" min={0} max={1} step={0.05} value={s.volume}
+                    onChange={(e) => setSfxVolume && setSfxVolume(s.id, +e.target.value)}
+                  />
+                  <span className="trdur__val">{Math.round(s.volume * 100)}%</span>
+                </div>
+              </div>
+              <div className="modal__actions" style={{ marginTop: 14 }}>
+                <button className="mbtn mbtn--danger" onClick={() => { removeSfx && removeSfx(s.id); setSfxEdit(null); }}>Remove</button>
+                <button className="mbtn" onClick={() => setSfxEdit(null)}>Done</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </section>
   );
 }
