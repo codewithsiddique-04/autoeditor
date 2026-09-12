@@ -8,21 +8,7 @@ import {
 import {
   CAPTION_STYLE_LIST, CAPTION_SIZES, captionAt, drawCaption, captionFontPx, captionLineHeightDefault,
 } from "../lib/captions";
-
-function tc(t) {
-  if (!isFinite(t) || t < 0) t = 0;
-  const m = Math.floor(t / 60);
-  const s = Math.floor(t % 60);
-  const d = Math.floor((t * 10) % 10);
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${d}`;
-}
-
-function clock(sec) {
-  if (!isFinite(sec) || sec < 0) sec = 0;
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
+import { tc, clock } from "../lib/format";
 
 export default function Editor({
   clips, imageEls, audioUrl, duration, peaks, dims,
