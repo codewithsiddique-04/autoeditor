@@ -29,6 +29,11 @@
   font-display: swap;
 }
 
+/* Bundled OFL caption fonts (preview canvas + WebCodecs export share these). */
+@font-face { font-family: "Montserrat"; src: url("/fonts/montserrat.ttf") format("truetype"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Anton"; src: url("/fonts/anton.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Poppins"; src: url("/fonts/poppins.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+
 * { box-sizing: border-box; }
 
 /* Dark, subtle scrollbars — the default OS bars (white/grey) clash with the
@@ -359,6 +364,16 @@ body {
 }
 .trtile:hover .trtile__label { color: var(--text); }
 .trtile.is-on .trtile__label { color: var(--accent); }
+
+/* Caption style tiles (Aa preview), same look as the transition grid */
+.captiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(82px, 1fr)); gap: 8px; }
+.captile { display: flex; flex-direction: column; gap: 4px; padding: 0; background: none; border: none; cursor: pointer; font: inherit; min-width: 0; }
+.captile__cv { width: 100%; aspect-ratio: 1 / 1; display: block; border-radius: 8px; border: 1.5px solid var(--line); transition: border-color .12s, box-shadow .12s; }
+.captile:hover .captile__cv { border-color: var(--muted); }
+.captile.is-on .captile__cv { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.captile__label { font-size: 11px; color: var(--muted); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.captile:hover .captile__label { color: var(--text); }
+.captile.is-on .captile__label { color: var(--accent); }
 
 /* Responsive: stack the shell on narrow screens */
 @media (max-width: 860px) {
