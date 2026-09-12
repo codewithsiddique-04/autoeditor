@@ -9,6 +9,8 @@ import TransitionsPanel from "./panels/TransitionsPanel";
 import MotionPanel from "./panels/MotionPanel";
 import CaptionsPanel from "./panels/CaptionsPanel";
 import InspectorModal from "./InspectorModal";
+import EffectsPanel from "./panels/EffectsPanel";
+import LeftPanel from "./LeftPanel";
 
 export default function Editor({
   clips, imageEls, audioUrl, duration, peaks, dims,
@@ -327,8 +329,43 @@ export default function Editor({
   const selectedImageNum = selectedClip && !selectedClip.gap ? imageClips.indexOf(selectedClip) + 1 : 0;
 
   return (
-    <section className="editor">
-      <div className="main">
+    <section className="editor2">
+      <div className="editor2__left">
+        <LeftPanel
+          tabs={[
+            { id: "motion", label: "Motion", node: (
+              <MotionPanel
+                imageClips={imageClips}
+                motionAmount={motionAmount} setMotionAmount={setMotionAmount}
+                applyMotionAll={applyMotionAll} applyMotionAlternate={applyMotionAlternate}
+                fadeIn={fadeIn} setFadeIn={setFadeIn} fadeOut={fadeOut} setFadeOut={setFadeOut}
+              />
+            ) },
+            { id: "transitions", label: "Transitions", node: (
+              <TransitionsPanel
+                clips={clips}
+                selectedIndex={selectedIndex} selectedClip={selectedClip} selectedImageNum={selectedImageNum}
+                currentType={currentType} pickType={pickType}
+                transitionDuration={transitionDuration} setTransitionDuration={setTransitionDuration}
+                applyTransitionAll={applyTransitionAll} applyTransitionMix={applyTransitionMix}
+              />
+            ) },
+            { id: "captions", label: "Captions", node: (
+              <CaptionsPanel
+                captionCues={captionCues} captionsOn={captionsOn} setCaptionsOn={setCaptionsOn}
+                captionStyle={captionStyle} setCaptionStyle={setCaptionStyle}
+                captionSize={captionSize} setCaptionSize={setCaptionSize}
+                captionLineHeight={captionLineHeight} setCaptionLineHeight={setCaptionLineHeight}
+                captionFontScale={captionFontScale} setCaptionFontScale={setCaptionFontScale}
+                captionName={captionName} captionError={captionError} onCaptionFile={onCaptionFile}
+              />
+            ) },
+            { id: "effects", label: "Effects", node: <EffectsPanel /> },
+          ]}
+        />
+      </div>
+
+      <div className="editor2__center">
         <div className="viewer">
           <div className="viewer__frame">
             <canvas ref={canvasRef} width={dims.width} height={dims.height} className="viewer__canvas" />
@@ -388,7 +425,22 @@ export default function Editor({
             </div>
           );
         })()}
+      </div>
 
+      <div className="editor2__right">
+        <ExportPanel
+          aspect={aspect} setAspect={setAspect} fps={fps} setFps={setFps}
+          renderQuality={renderQuality} setRenderQuality={setRenderQuality} renderDims={renderDims} dims={dims}
+          imageCount={imageCount} gapCount={gapCount} exportDuration={exportDuration} duration={duration} elapsed={elapsed}
+          wcAvailable={wcAvailable} serverAvailable={serverAvailable} busy={busy} wcBusy={wcBusy}
+          wcPhase={wcPhase} wcProgress={wcProgress} progress={progress}
+          wcEnabled={wcEnabled} setWcEnabled={setWcEnabled}
+          onWebCodecsTest={onWebCodecsTest} onRender={onRender} onWebCodecsCancel={onWebCodecsCancel} onCancel={onCancel}
+          outUrl={outUrl} error={error}
+        />
+      </div>
+
+      <div className="editor2__timeline">
         <Timeline
           clips={clips}
           imageEls={imageEls}
@@ -411,44 +463,6 @@ export default function Editor({
           onTrimChange={setTrimEnd}
         />
       </div>
-
-      <aside className="side">
-        <ExportPanel
-          aspect={aspect} setAspect={setAspect} fps={fps} setFps={setFps}
-          renderQuality={renderQuality} setRenderQuality={setRenderQuality} renderDims={renderDims} dims={dims}
-          imageCount={imageCount} gapCount={gapCount} exportDuration={exportDuration} duration={duration} elapsed={elapsed}
-          wcAvailable={wcAvailable} serverAvailable={serverAvailable} busy={busy} wcBusy={wcBusy}
-          wcPhase={wcPhase} wcProgress={wcProgress} progress={progress}
-          wcEnabled={wcEnabled} setWcEnabled={setWcEnabled}
-          onWebCodecsTest={onWebCodecsTest} onRender={onRender} onWebCodecsCancel={onWebCodecsCancel} onCancel={onCancel}
-          outUrl={outUrl} error={error}
-        />
-
-        <TransitionsPanel
-          clips={clips}
-          selectedIndex={selectedIndex} selectedClip={selectedClip} selectedImageNum={selectedImageNum}
-          currentType={currentType} pickType={pickType}
-          transitionDuration={transitionDuration} setTransitionDuration={setTransitionDuration}
-          applyTransitionAll={applyTransitionAll} applyTransitionMix={applyTransitionMix}
-        />
-
-        <MotionPanel
-          imageClips={imageClips}
-          motionAmount={motionAmount} setMotionAmount={setMotionAmount}
-          applyMotionAll={applyMotionAll} applyMotionAlternate={applyMotionAlternate}
-          fadeIn={fadeIn} setFadeIn={setFadeIn} fadeOut={fadeOut} setFadeOut={setFadeOut}
-        />
-
-        <CaptionsPanel
-          captionCues={captionCues} captionsOn={captionsOn} setCaptionsOn={setCaptionsOn}
-          captionStyle={captionStyle} setCaptionStyle={setCaptionStyle}
-          captionSize={captionSize} setCaptionSize={setCaptionSize}
-          captionLineHeight={captionLineHeight} setCaptionLineHeight={setCaptionLineHeight}
-          captionFontScale={captionFontScale} setCaptionFontScale={setCaptionFontScale}
-          captionName={captionName} captionError={captionError} onCaptionFile={onCaptionFile}
-        />
-
-      </aside>
 
       <input
         ref={fileInputRef} type="file" accept={coarse ? undefined : "image/*,video/*"} hidden
