@@ -8,6 +8,7 @@ import ExportPanel from "./panels/ExportPanel";
 import TransitionsPanel from "./panels/TransitionsPanel";
 import MotionPanel from "./panels/MotionPanel";
 import CaptionsPanel from "./panels/CaptionsPanel";
+import InspectorModal from "./InspectorModal";
 
 export default function Editor({
   clips, imageEls, audioUrl, duration, peaks, dims,
@@ -32,13 +33,11 @@ export default function Editor({
   const audioRef = useRef(null);
   const rafRef = useRef(0);
   const fileInputRef = useRef(null);
-  const replaceInputRef = useRef(null);
   const pending = useRef(null); // gap-fill target name
   const trimEndRef = useRef(exportDuration);
   const vidRefs = useRef({});     // clip name -> offscreen <video> for live preview
   const drawRef = useRef(null);   // latest draw fn (so video 'seeked' can redraw)
   const timeRef = useRef(0);      // latest playhead time
-  const modalVideoRef = useRef(null); // the trim scrubber <video> in the inspector
   useEffect(() => { trimEndRef.current = exportDuration; }, [exportDuration]);
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -55,9 +54,6 @@ export default function Editor({
   useEffect(() => {
     try { setCoarse(window.matchMedia && window.matchMedia("(pointer: coarse)").matches); } catch { /* ignore */ }
   }, []);
-  const [pendFile, setPendFile] = useState(null);  // chosen replacement, not yet applied
-  const [pendUrl, setPendUrl] = useState(null);
-
   // Gap "+" → pick a file to fill an empty slot / lead-in.
   const askAdd = useCallback((name) => {
     pending.current = name;
@@ -71,36 +67,9 @@ export default function Editor({
     pending.current = null;
   }, [fillGap]);
 
-  // Clip inspector: click a clip → preview → optionally pick a replacement,
-  // preview it, then Apply (or Remove the image).
-  const clearPend = useCallback(() => {
-    setPendUrl((u) => { if (u) URL.revokeObjectURL(u); return null; });
-    setPendFile(null);
-  }, []);
-  const openInspect = useCallback((name) => { clearPend(); setInspect(name); }, [clearPend]);
-  const closeInspect = useCallback(() => { clearPend(); setInspect(null); }, [clearPend]);
-  const onPickReplacement = useCallback((e) => {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = "";
-    if (!file || !(file.type.startsWith("image/") || file.type.startsWith("video/"))) return;
-    setPendFile(file);
-    setPendUrl((u) => { if (u) URL.revokeObjectURL(u); return URL.createObjectURL(file); });
-  }, []);
-  const applyReplacement = useCallback(() => {
-    if (inspect && pendFile && replaceImage) replaceImage(inspect, pendFile);
-    closeInspect();
-  }, [inspect, pendFile, replaceImage, closeInspect]);
-  const removeInspected = useCallback(() => {
-    if (inspect && removeImage) removeImage(inspect);
-    closeInspect();
-  }, [inspect, removeImage, closeInspect]);
-
-  useEffect(() => {
-    if (!inspect) return;
-    const onEsc = (e) => { if (e.key === "Escape") closeInspect(); };
-    window.addEventListener("keydown", onEsc);
-    return () => window.removeEventListener("keydown", onEsc);
-  }, [inspect, closeInspect]);
+  // Clip inspector: click a clip → the InspectorModal handles preview/replace/remove.
+  const openInspect = useCallback((name) => setInspect(name), []);
+  const closeInspect = useCallback(() => setInspect(null), []);
 
   // Keep one offscreen <video> per video clip so the preview can draw live frames
   // (not just the poster). Created/torn down as clips come and go.
@@ -485,174 +454,16 @@ export default function Editor({
         ref={fileInputRef} type="file" accept={coarse ? undefined : "image/*,video/*"} hidden
         onChange={onPickFile}
       />
-      <input
-        ref={replaceInputRef} type="file" accept={coarse ? undefined : "image/*,video/*"} hidden
-        onChange={onPickReplacement}
+
+      <InspectorModal
+        inspect={inspect} onClose={closeInspect}
+        clips={clips} imageEls={imageEls} imageClips={imageClips} imageCount={imageCount}
+        videoInfoByName={videoInfoByName} volumeByName={volumeByName} setVolume={setVolume}
+        trimByName={trimByName} setTrim={setTrim} fitByName={fitByName} setFit={setFit}
+        motionByName={motionByName} setMotion={setMotion}
+        replaceImage={replaceImage} removeImage={removeImage}
+        coarse={coarse}
       />
-
-      {inspect && (() => {
-        const insClip = clips.find((c) => c.name === inspect);
-        const el = imageEls[inspect];
-        const num = insClip ? imageClips.indexOf(insClip) + 1 : 0;
-        const curUrl = pendUrl || (el && el.url);
-        const pendIsVid = !!(pendFile && pendFile.type && pendFile.type.startsWith("video/"));
-        const isVid = !!(el && el.isVideo) && !pendUrl;
-        const vinfo = videoInfoByName[inspect] || {};
-        const vol = volumeByName[inspect] == null ? 0.5 : volumeByName[inspect];
-        const inPt = trimByName[inspect] || 0;
-        const kind = isVid ? "Video" : "Image";
-        const slotDur = (insClip && insClip.duration) || 0;
-        const vdur = vinfo.duration || 0;
-        const longer = !!(vdur && insClip && vdur > slotDur + 0.05);
-        const shorter = !!(vdur && insClip && vdur < slotDur - 0.05);
-        const diff = longer || shorter;
-        // Default by length: longer clip trims (1x), shorter fills the slot (fit/slow).
-        const fitMode = fitByName[inspect] || (longer ? "trim" : "fit");
-        const speed = (diff && slotDur > 0) ? (vdur / slotDur) : 1;
-        return (
-          <div className="modal" role="dialog" aria-modal="true" onClick={closeInspect}>
-            <div className="modal__card" onClick={(e) => e.stopPropagation()}>
-              <div className="modal__head">
-                <span className="modal__title">
-                  {num ? `${kind} ${num} of ${imageCount}` : kind}
-                  {insClip && <span className="modal__at"> · {tc(insClip.start)}</span>}
-                </span>
-                <button className="modal__x" onClick={closeInspect} aria-label="Close">✕</button>
-              </div>
-
-              <div className="modal__stage">
-                {pendUrl ? (
-                  // A chosen-but-not-applied replacement: a video needs a <video>,
-                  // not an <img> (an <img> with a video URL just shows black).
-                  pendIsVid
-                    ? <video src={pendUrl} className="modal__stagevid" controls muted playsInline preload="metadata" />
-                    : <img src={pendUrl} alt="" />
-                ) : isVid && vinfo.url ? (
-                  <video
-                    ref={modalVideoRef} src={vinfo.url} className="modal__stagevid"
-                    controls muted playsInline preload="metadata"
-                    onLoadedMetadata={(e) => {
-                      const v = e.currentTarget;
-                      try { v.currentTime = inPt; } catch { /* ignore */ }
-                      v.playbackRate = (diff && fitMode === "fit") ? Math.min(16, Math.max(0.0625, speed)) : 1;
-                    }}
-                  />
-                ) : (curUrl && <img src={curUrl} alt="" />)}
-                {pendUrl && <span className="modal__flag">New — not applied yet</span>}
-              </div>
-              <div className="modal__file">
-                {pendFile ? pendFile.name : (el && el.fileName) || ""}
-              </div>
-
-              {insClip && !insClip.gap && (
-                <div className="modal__motion">
-                  <span className="modal__motion-label">Motion (Ken Burns zoom)</span>
-                  <div className="seg">
-                    {[["none", "None"], ["zoomin", "Zoom in"], ["zoomout", "Zoom out"]].map(([id, lbl]) => (
-                      <button
-                        key={id}
-                        type="button"
-                        className={((motionByName && motionByName[inspect]) || "none") === id ? "is-on" : ""}
-                        onClick={() => setMotion && setMotion(inspect, id)}
-                      >{lbl}</button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {insClip && !insClip.gap && isVid && (
-                <div className="modal__vid">
-                  {diff && (
-                    <div className="modal__fit">
-                      <span className="modal__motion-label">
-                        {longer ? "Clip is longer than its slot" : "Clip is shorter than its slot"} · {vinfo.duration.toFixed(1)}s clip, {insClip.duration.toFixed(1)}s slot
-                      </span>
-                      <div className="seg">
-                        <button
-                          type="button" className={fitMode === "fit" ? "is-on" : ""}
-                          onClick={() => setFit && setFit(inspect, "fit")}
-                        >Fit to slot</button>
-                        <button
-                          type="button" className={fitMode === "trim" ? "is-on" : ""}
-                          onClick={() => setFit && setFit(inspect, "trim")}
-                        >Trim (1×)</button>
-                      </div>
-                      {fitMode === "fit"
-                        ? <span className="modal__hint">{longer
-                            ? `Whole clip fast-forwarded at ${speed.toFixed(1)}× to fit the slot.`
-                            : `Whole clip slowed to ${speed.toFixed(2)}× to fill the slot.`}</span>
-                        : <span className="modal__hint">Plays at 1× — set a start point below;{longer ? " the rest is cut off." : " the last frame then holds to fill the slot."}</span>}
-                    </div>
-                  )}
-                  {(!diff || fitMode === "trim") && (() => {
-                    const dur = vinfo.duration || 0;
-                    const remain = Math.max(0, dur - inPt);        // footage left from the start point
-                    const playLen = Math.min(insClip.duration, remain); // real-time footage shown
-                    const holdFor = Math.max(0, insClip.duration - remain); // seconds the last frame holds
-                    return (
-                      <div className="modal__trim">
-                        <span className="modal__motion-label">Trim — drag the handle to set where the clip starts</span>
-                        {/* Video-editor style trim bar: the fill shows the part that plays;
-                            dragging the handle scrubs the preview above and sets the start. */}
-                        <div className="trimbar">
-                          <div
-                            className="trimbar__fill"
-                            style={{ left: `${dur ? (inPt / dur) * 100 : 0}%`, width: `${dur ? (playLen / dur) * 100 : 0}%` }}
-                          />
-                          <input
-                            className="trimbar__range"
-                            type="range" min={0} max={Math.max(0.1, dur)} step={0.05}
-                            value={Math.min(inPt, Math.max(0.1, dur))}
-                            onChange={(e) => {
-                              const val = +e.target.value;
-                              if (setTrim) setTrim(inspect, val);
-                              if (modalVideoRef.current) { try { modalVideoRef.current.currentTime = val; } catch { /* ignore */ } }
-                            }}
-                          />
-                        </div>
-                        <span className="modal__hint">
-                          Starts at {inPt.toFixed(1)}s of {dur.toFixed(1)}s · plays {playLen.toFixed(1)}s in a {insClip.duration.toFixed(1)}s slot
-                        </span>
-                        {holdFor > 0.05 && (
-                          <span className="modal__hint modal__hint--warn">
-                            Only {remain.toFixed(1)}s of footage left — the last frame holds for {holdFor.toFixed(1)}s to fill the slot.
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })()}
-                  <div className="modal__vol">
-                    <span className="modal__motion-label">Clip audio volume</span>
-                    <div className="modal__slider">
-                      <input
-                        type="range" min={0} max={1} step={0.05} value={vol}
-                        onChange={(e) => setVolume && setVolume(inspect, +e.target.value)}
-                      />
-                      <span className="trdur__val">{Math.round(vol * 100)}%</span>
-                    </div>
-                    <span className="modal__hint">Plays under the voiceover. 0% = silent.</span>
-                  </div>
-                </div>
-              )}
-
-              {!pendUrl ? (
-                <div className="modal__actions">
-                  <button className="mbtn mbtn--primary" onClick={() => replaceInputRef.current && replaceInputRef.current.click()}>
-                    Replace {isVid ? "video" : "image"}
-                  </button>
-                  <button className="mbtn mbtn--danger" onClick={removeInspected}>Remove from timeline</button>
-                </div>
-              ) : (
-                <div className="modal__actions">
-                  <button className="mbtn mbtn--primary" onClick={applyReplacement}>Apply replacement</button>
-                  <button className="mbtn" onClick={() => replaceInputRef.current && replaceInputRef.current.click()}>Choose different</button>
-                  <button className="mbtn mbtn--ghost" onClick={clearPend}>Cancel</button>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })()}
     </section>
   );
 }
