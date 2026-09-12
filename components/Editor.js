@@ -1,28 +1,17 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Timeline from "./Timeline";
-import {
-  TRANSITION_LIST, transitionOf,
-  MIN_TRANSITION_DURATION, MAX_TRANSITION_DURATION,
-} from "../lib/transitions";
-import {
-  CAPTION_STYLE_LIST, CAPTION_SIZES, captionAt, drawCaption, captionFontPx, captionLineHeightDefault,
-} from "../lib/captions";
-
-function tc(t) {
-  if (!isFinite(t) || t < 0) t = 0;
-  const m = Math.floor(t / 60);
-  const s = Math.floor(t % 60);
-  const d = Math.floor((t * 10) % 10);
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${d}`;
-}
-
-function clock(sec) {
-  if (!isFinite(sec) || sec < 0) sec = 0;
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
+import { transitionOf } from "../lib/transitions";
+import { applyEffect } from "../lib/effects";
+import { captionAt, drawCaption, captionFontPx, captionFontFamily } from "../lib/captions";
+import { tc, clock } from "../lib/format";
+import ExportPanel from "./panels/ExportPanel";
+import TransitionsPanel from "./panels/TransitionsPanel";
+import MotionPanel from "./panels/MotionPanel";
+import CaptionsPanel from "./panels/CaptionsPanel";
+import InspectorModal from "./InspectorModal";
+import EffectsPanel from "./panels/EffectsPanel";
+import LeftPanel from "./LeftPanel";
 
 export default function Editor({
   clips, imageEls, audioUrl, duration, peaks, dims,
@@ -33,6 +22,8 @@ export default function Editor({
   replaceImage, removeImage, fillGap, resizeBoundary,
   transitionsByName, transitionDuration, setTransition, applyTransitionAll, applyTransitionMix, setTransitionDuration,
   fadeIn, setFadeIn, fadeOut, setFadeOut,
+  effectId, setEffectId, effectIntensity, setEffectIntensity,
+  effectByName = {}, setClipEffect, removeClipEffect,
   motionByName, setMotion, applyMotionAll, applyMotionAlternate, motionAmount, setMotionAmount,
   videoInfoByName = {}, trimByName = {}, setTrim, volumeByName = {}, setVolume,
   fitByName = {}, setFit,
@@ -41,20 +32,18 @@ export default function Editor({
   captionCues, captionsOn, setCaptionsOn, captionStyle, setCaptionStyle,
   captionSize, setCaptionSize, captionLineHeight, setCaptionLineHeight,
   captionFontScale, setCaptionFontScale,
+  captionFont, setCaptionFont, captionPosition, setCaptionPosition,
   captionName, captionError, onCaptionFile,
 }) {
   const canvasRef = useRef(null);
   const audioRef = useRef(null);
   const rafRef = useRef(0);
   const fileInputRef = useRef(null);
-  const capInputRef = useRef(null);
-  const replaceInputRef = useRef(null);
   const pending = useRef(null); // gap-fill target name
   const trimEndRef = useRef(exportDuration);
   const vidRefs = useRef({});     // clip name -> offscreen <video> for live preview
   const drawRef = useRef(null);   // latest draw fn (so video 'seeked' can redraw)
   const timeRef = useRef(0);      // latest playhead time
-  const modalVideoRef = useRef(null); // the trim scrubber <video> in the inspector
   useEffect(() => { trimEndRef.current = exportDuration; }, [exportDuration]);
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -71,18 +60,38 @@ export default function Editor({
   useEffect(() => {
     try { setCoarse(window.matchMedia && window.matchMedia("(pointer: coarse)").matches); } catch { /* ignore */ }
   }, []);
-  const [pendFile, setPendFile] = useState(null);  // chosen replacement, not yet applied
-  const [pendUrl, setPendUrl] = useState(null);
-  const [mixMode, setMixMode] = useState(false); // Transitions panel in random-mix mode
-  const [mixPicks, setMixPicks] = useState(() => new Set()); // ephemeral: chosen transitions for the random mix
-  const toggleMix = useCallback((id) => {
-    setMixPicks((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }, []);
 
+  // Draggable left panel: the right column is fixed (320px); dragging the divider
+  // resizes the left panel (≤ 30% of the editor) and the preview (≤ 60%). Persisted.
+  const editorRef = useRef(null);
+  const [leftW, setLeftW] = useState(() => {
+    try { const v = +localStorage.getItem("ae-leftw"); if (v > 0) return v; } catch { /* ignore */ }
+    return 340;
+  });
+  const draggingRef = useRef(false);
+  useEffect(() => { try { localStorage.setItem("ae-leftw", String(Math.round(leftW))); } catch { /* ignore */ } }, [leftW]);
+  const onResizeDown = useCallback((e) => {
+    draggingRef.current = true;
+    e.currentTarget.classList.add("is-drag");
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  }, []);
+  const onResizeMove = useCallback((e) => {
+    if (!draggingRef.current || !editorRef.current) return;
+    const r = editorRef.current.getBoundingClientRect();
+    const editorW = r.width;
+    const rightPx = 320, gaps = 24; // fixed right column + two 12px grid gaps
+    const leftMax = 0.30 * editorW;                       // left ≤ 30%
+    const leftMin = Math.max(240, 0.40 * editorW - rightPx - gaps); // keeps preview ≤ 60%
+    const lo = Math.min(leftMin, leftMax);
+    let x = e.clientX - r.left;
+    x = Math.max(lo, Math.min(leftMax, x));
+    setLeftW(x);
+  }, []);
+  const onResizeUp = useCallback((e) => {
+    draggingRef.current = false;
+    e.currentTarget.classList.remove("is-drag");
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+  }, []);
   // Gap "+" → pick a file to fill an empty slot / lead-in.
   const askAdd = useCallback((name) => {
     pending.current = name;
@@ -96,42 +105,9 @@ export default function Editor({
     pending.current = null;
   }, [fillGap]);
 
-  // Clip inspector: click a clip → preview → optionally pick a replacement,
-  // preview it, then Apply (or Remove the image).
-  const clearPend = useCallback(() => {
-    setPendUrl((u) => { if (u) URL.revokeObjectURL(u); return null; });
-    setPendFile(null);
-  }, []);
-  const openInspect = useCallback((name) => { clearPend(); setInspect(name); }, [clearPend]);
-  const closeInspect = useCallback(() => { clearPend(); setInspect(null); }, [clearPend]);
-  const onPickReplacement = useCallback((e) => {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = "";
-    if (!file || !(file.type.startsWith("image/") || file.type.startsWith("video/"))) return;
-    setPendFile(file);
-    setPendUrl((u) => { if (u) URL.revokeObjectURL(u); return URL.createObjectURL(file); });
-  }, []);
-  const applyReplacement = useCallback(() => {
-    if (inspect && pendFile && replaceImage) replaceImage(inspect, pendFile);
-    closeInspect();
-  }, [inspect, pendFile, replaceImage, closeInspect]);
-  const removeInspected = useCallback(() => {
-    if (inspect && removeImage) removeImage(inspect);
-    closeInspect();
-  }, [inspect, removeImage, closeInspect]);
-
-  useEffect(() => {
-    if (!inspect) return;
-    const onEsc = (e) => { if (e.key === "Escape") closeInspect(); };
-    window.addEventListener("keydown", onEsc);
-    return () => window.removeEventListener("keydown", onEsc);
-  }, [inspect, closeInspect]);
-
-  const onPickCaption = useCallback((e) => {
-    const file = e.target.files && e.target.files[0];
-    if (file && onCaptionFile) onCaptionFile(file);
-    e.target.value = "";
-  }, [onCaptionFile]);
+  // Clip inspector: click a clip → the InspectorModal handles preview/replace/remove.
+  const openInspect = useCallback((name) => setInspect(name), []);
+  const closeInspect = useCallback(() => setInspect(null), []);
 
   // Keep one offscreen <video> per video clip so the preview can draw live frames
   // (not just the poster). Created/torn down as clips come and go.
@@ -246,10 +222,16 @@ export default function Editor({
       if (nm !== activeVideo && !v.paused) { try { v.pause(); } catch { /* ignore */ } }
     }
 
+    // Atmosphere effect over the frame (before captions so captions stay crisp).
+    // A per-clip override wins over the global effect for the clip under the playhead.
+    const fxClip = clips.find((c) => t >= c.start && t < c.start + c.duration) || clips[clips.length - 1];
+    const ov = fxClip && effectByName[fxClip.name];
+    applyEffect(ctx, ov ? ov.id : effectId, ov ? ov.intensity : effectIntensity, W, H, t);
+
     // Captions burn in before the fades, so the fade dims them too.
     if (captionsOn && captionCues && captionCues.length) {
       const txt = captionAt(captionCues, t);
-      if (txt) drawCaption(ctx, txt, W, H, captionStyle, captionFontPx(H, captionSize, captionFontScale), captionLineHeight);
+      if (txt) drawCaption(ctx, txt, W, H, captionStyle, captionFontPx(H, captionSize, captionFontScale), captionLineHeight, captionFontFamily(captionFont), captionPosition);
     }
 
     // Scene fades (opening / ending).
@@ -263,8 +245,9 @@ export default function Editor({
       ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
     }
   }, [clips, imageEls, transitionsByName, transitionDuration, motionByName, motionAmount,
-      fadeIn, fadeOut, duration, exportDuration, playing, videoInfoByName, videoParams, volumeByName,
-      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale]);
+      fadeIn, fadeOut, effectId, effectIntensity, effectByName, duration, exportDuration, playing, videoInfoByName, videoParams, volumeByName,
+      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale,
+      captionFont, captionPosition]);
 
   useEffect(() => { drawRef.current = draw; }, [draw]);
   useEffect(() => { timeRef.current = time; }, [time]);
@@ -389,8 +372,60 @@ export default function Editor({
   const selectedImageNum = selectedClip && !selectedClip.gap ? imageClips.indexOf(selectedClip) + 1 : 0;
 
   return (
-    <section className="editor">
-      <div className="main">
+    <section className="editor2" ref={editorRef} style={{ "--left-w": `${leftW}px` }}>
+      <div className="editor2__left">
+        <LeftPanel
+          tabs={[
+            { id: "motion", label: "Motion", node: (
+              <MotionPanel
+                imageClips={imageClips}
+                motionByName={motionByName}
+                motionAmount={motionAmount} setMotionAmount={setMotionAmount}
+                applyMotionAll={applyMotionAll} applyMotionAlternate={applyMotionAlternate}
+                fadeIn={fadeIn} setFadeIn={setFadeIn} fadeOut={fadeOut} setFadeOut={setFadeOut}
+              />
+            ) },
+            { id: "transitions", label: "Transitions", node: (
+              <TransitionsPanel
+                clips={clips}
+                selectedIndex={selectedIndex} selectedClip={selectedClip} selectedImageNum={selectedImageNum}
+                currentType={currentType} pickType={pickType}
+                transitionDuration={transitionDuration} setTransitionDuration={setTransitionDuration}
+                applyTransitionAll={applyTransitionAll} applyTransitionMix={applyTransitionMix}
+              />
+            ) },
+            { id: "captions", label: "Captions", node: (
+              <CaptionsPanel
+                captionCues={captionCues} captionsOn={captionsOn} setCaptionsOn={setCaptionsOn}
+                captionStyle={captionStyle} setCaptionStyle={setCaptionStyle}
+                captionSize={captionSize} setCaptionSize={setCaptionSize}
+                captionLineHeight={captionLineHeight} setCaptionLineHeight={setCaptionLineHeight}
+                captionFontScale={captionFontScale} setCaptionFontScale={setCaptionFontScale}
+                captionFont={captionFont} setCaptionFont={setCaptionFont}
+                captionPosition={captionPosition} setCaptionPosition={setCaptionPosition}
+                captionName={captionName} captionError={captionError} onCaptionFile={onCaptionFile}
+              />
+            ) },
+            { id: "effects", label: "Effects", node: (
+              <EffectsPanel
+                effectId={effectId} setEffectId={setEffectId}
+                effectIntensity={effectIntensity} setEffectIntensity={setEffectIntensity}
+              />
+            ) },
+          ]}
+        />
+        <div
+          className="editor2__resizer"
+          role="separator"
+          aria-orientation="vertical"
+          title="Drag to resize"
+          onPointerDown={onResizeDown}
+          onPointerMove={onResizeMove}
+          onPointerUp={onResizeUp}
+        />
+      </div>
+
+      <div className="editor2__center">
         <div className="viewer">
           <div className="viewer__frame">
             <canvas ref={canvasRef} width={dims.width} height={dims.height} className="viewer__canvas" />
@@ -450,7 +485,22 @@ export default function Editor({
             </div>
           );
         })()}
+      </div>
 
+      <div className="editor2__right">
+        <ExportPanel
+          aspect={aspect} setAspect={setAspect} fps={fps} setFps={setFps}
+          renderQuality={renderQuality} setRenderQuality={setRenderQuality} renderDims={renderDims} dims={dims}
+          imageCount={imageCount} gapCount={gapCount} exportDuration={exportDuration} duration={duration} elapsed={elapsed}
+          wcAvailable={wcAvailable} serverAvailable={serverAvailable} busy={busy} wcBusy={wcBusy}
+          wcPhase={wcPhase} wcProgress={wcProgress} progress={progress}
+          wcEnabled={wcEnabled} setWcEnabled={setWcEnabled}
+          onWebCodecsTest={onWebCodecsTest} onRender={onRender} onWebCodecsCancel={onWebCodecsCancel} onCancel={onCancel}
+          outUrl={outUrl} error={error}
+        />
+      </div>
+
+      <div className="editor2__timeline">
         <Timeline
           clips={clips}
           imageEls={imageEls}
@@ -474,490 +524,21 @@ export default function Editor({
         />
       </div>
 
-      <aside className="side">
-        <div className="panel export">
-          <h2 className="panel__h">Export</h2>
-
-          <div className="ctrl-row">
-            <label className="ctrl">
-              <span className="ctrl__label">Aspect</span>
-              <span className="selectwrap">
-                <select value={aspect} onChange={(e) => setAspect(e.target.value)}>
-                  <option value="16:9">16:9 — 1920×1080</option>
-                  <option value="9:16">9:16 — 1080×1920</option>
-                  <option value="auto">Auto — match</option>
-                </select>
-              </span>
-            </label>
-            <label className="ctrl">
-              <span className="ctrl__label">FPS</span>
-              <span className="selectwrap">
-                <select value={fps} onChange={(e) => setFps(+e.target.value)}>
-                  <option value={24}>24 fps</option>
-                  <option value={30}>30 fps</option>
-                </select>
-              </span>
-            </label>
-            <label className="ctrl">
-              <span className="ctrl__label">Quality</span>
-              <span className="selectwrap">
-                <select value={renderQuality} onChange={(e) => setRenderQuality && setRenderQuality(e.target.value)}>
-                  <option value="full">Full — {dims.width}×{dims.height}</option>
-                  <option value="720p">720p — faster</option>
-                </select>
-              </span>
-            </label>
-          </div>
-
-          <dl className="specs">
-            <div className="spec"><dt>Resolution</dt><dd>{(renderDims || dims).width}×{(renderDims || dims).height}{renderQuality === "720p" ? " · faster" : ""}</dd></div>
-            <div className="spec"><dt>Images</dt><dd>{imageCount}</dd></div>
-            <div className="spec spec--length">
-              <dt>Length</dt>
-              <dd>
-                {tc(exportDuration)}
-                {exportDuration < duration && (
-                  <span className="spec__trim">trimmed from {tc(duration)}</span>
-                )}
-              </dd>
-            </div>
-          </dl>
-
-          {gapCount > 0 && (
-            <div className="note note--gap">
-              {gapCount} empty {gapCount === 1 ? "gap" : "gaps"} render black — fill with the <b>+</b>.
-            </div>
-          )}
-
-          {/* Fast-render-only for now: the Fast/ffmpeg toggle is hidden and WebCodecs is
-              always used when available. The ffmpeg backend code is kept (just not exposed);
-              flip this back on to re-enable the toggle. */}
-          {false && wcAvailable && serverAvailable && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8, opacity: (busy || wcBusy) ? 0.5 : 1 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 600, opacity: 0.85 }}>⚡ Fast render</span>
-              <button
-                type="button"
-                className={`cap-switch ${wcEnabled ? "is-on" : ""}`}
-                onClick={() => setWcEnabled && setWcEnabled((v) => !v)}
-                disabled={busy || wcBusy}
-                aria-pressed={!!wcEnabled}
-                aria-label="Fast GPU render (WebCodecs)"
-                title="Render on the GPU via WebCodecs — faster for image-only projects (beta)"
-              >
-                <span className="cap-switch__box" />
-              </button>
-            </div>
-          )}
-          {!(busy || wcBusy) ? (
-            (wcAvailable || serverAvailable) ? (
-              <button
-                className="render"
-                onClick={wcAvailable ? onWebCodecsTest : onRender}
-              >Render MP4</button>
-            ) : (
-              <div className="note">Rendering needs Chrome, Edge, or Safari 16.4+ (WebCodecs) in this browser.</div>
-            )
-          ) : (
-            <>
-              <button className="render render--busy" disabled>
-                {wcBusy ? (wcPhase || "Rendering") : "Rendering"}… {Math.round((wcBusy ? wcProgress : progress) * 100)}%
-              </button>
-              <div className="progress"><i style={{ width: `${Math.round((wcBusy ? wcProgress : progress) * 100)}%` }} /></div>
-              <div className="render-meta">
-                <span>{clock(elapsed)} elapsed</span>
-                {(wcBusy ? wcProgress : progress) > 0.03 && <span>~{clock(elapsed * (1 - (wcBusy ? wcProgress : progress)) / (wcBusy ? wcProgress : progress))} left</span>}
-              </div>
-              <button className="cancel" onClick={wcBusy ? onWebCodecsCancel : onCancel}>Cancel</button>
-            </>
-          )}
-          {outUrl && <a className="download" href={outUrl} download="story.mp4">↓ Download MP4</a>}
-          {error && <div className="note note--bad">{error}</div>}
-        </div>
-
-        <div className="panel transitions">
-          <div className="transitions__head">
-            <div className="transitions__titlerow">
-              <span className="panel__h">Transitions</span>
-              <button
-                type="button"
-                className={`cap-switch ${mixMode ? "is-on" : ""}`}
-                onClick={() => setMixMode((v) => !v)}
-                aria-pressed={mixMode}
-                title="Randomly apply a set of transitions across all cuts"
-              >
-                <span className="cap-switch__box" />
-                Random mix
-              </button>
-            </div>
-            <span className="transitions__target">
-              {selectedIndex > 0
-                ? `Into image ${selectedImageNum || "—"} · ${tc(selectedClip.start)}`
-                : selectedIndex === 0
-                  ? "First image — no incoming transition"
-                  : "Tap a ◇ cut above to set its transition"}
-            </span>
-          </div>
-
-          <div className="transitions__chips">
-            {TRANSITION_LIST.map((tr) => {
-              const on = mixMode ? mixPicks.has(tr.id) : currentType === tr.id;
-              return (
-                <button
-                  key={tr.id}
-                  type="button"
-                  className={`trchip ${on ? "is-on" : ""}`}
-                  onClick={() => (mixMode ? toggleMix(tr.id) : pickType(tr.id))}
-                >
-                  <span className="trchip__icon">{tr.icon}</span>{tr.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <label className="trdur">
-            <span>Duration</span>
-            <input
-              type="range" min={MIN_TRANSITION_DURATION} max={MAX_TRANSITION_DURATION} step={0.05}
-              value={transitionDuration}
-              onChange={(e) => setTransitionDuration(+e.target.value)}
-            />
-            <span className="trdur__val">{transitionDuration.toFixed(2)}s</span>
-          </label>
-
-          {!mixMode ? (
-            <button
-              type="button" className="trall"
-              onClick={() => applyTransitionAll(currentType, clips.map((c) => c.name))}
-            >
-              Apply “{transitionOf(currentType).label}” to all cuts
-            </button>
-          ) : (
-            <div className="trmix-foot">
-              <span className="trmix-count">
-                {mixPicks.size ? `Picked ${mixPicks.size}` : "None picked"}
-              </span>
-              <button
-                type="button" className="trall trmix-apply"
-                disabled={mixPicks.size === 0}
-                onClick={() => applyTransitionMix([...mixPicks], clips.map((c) => c.name))}
-              >
-                Apply random mix to video
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="panel">
-          <h2 className="panel__h">Motion — Ken Burns zoom</h2>
-          <div className="mini-h">Click an image on the timeline to set its zoom. Set the depth, or apply to all here.</div>
-          <label className="trdur">
-            <span>Zoom depth</span>
-            <input type="range" min={0.02} max={0.2} step={0.01} value={motionAmount}
-              onChange={(e) => setMotionAmount(+e.target.value)} />
-            <span className="trdur__val">{Math.round(motionAmount * 100)}%</span>
-          </label>
-          <div className="seg" style={{ marginTop: 8 }}>
-            <button type="button" onClick={() => applyMotionAll("zoomin", imageClips.map((c) => c.name))}>Zoom in all</button>
-            <button type="button" onClick={() => applyMotionAll("zoomout", imageClips.map((c) => c.name))}>Zoom out all</button>
-          </div>
-          <div className="seg" style={{ marginTop: 6 }}>
-            <button type="button" onClick={() => applyMotionAlternate(imageClips.map((c) => c.name))}>Alternate</button>
-            <button type="button" onClick={() => applyMotionAll("none", imageClips.map((c) => c.name))}>Clear</button>
-          </div>
-        </div>
-
-        <div className="panel">
-          <h2 className="panel__h">Scene fades</h2>
-          <div className="mini-h">Fade the opening and ending (video &amp; audio).</div>
-          <label className="trdur">
-            <span>Fade in</span>
-            <input type="range" min={0} max={2} step={0.1} value={fadeIn} onChange={(e) => setFadeIn(+e.target.value)} />
-            <span className="trdur__val">{fadeIn > 0 ? `${fadeIn.toFixed(1)}s` : "off"}</span>
-          </label>
-          <label className="trdur">
-            <span>Fade out</span>
-            <input type="range" min={0} max={2} step={0.1} value={fadeOut} onChange={(e) => setFadeOut(+e.target.value)} />
-            <span className="trdur__val">{fadeOut > 0 ? `${fadeOut.toFixed(1)}s` : "off"}</span>
-          </label>
-        </div>
-
-        <div className="panel captions">
-          <h2 className="panel__h">Captions</h2>
-          {!(captionCues && captionCues.length) ? (
-            <div className="cap-empty">
-              <button type="button" className="cap-upload" onClick={() => capInputRef.current && capInputRef.current.click()}>
-                <span className="cap-upload__i">⤒</span> Upload timestamped script
-              </button>
-              <p className="cap-hint">
-                An <code>.srt</code>, <code>.vtt</code>, or timestamped <code>.txt</code> — inline
-                markers like <code>(0:03)</code>, NoteGPT ranges, or <code>[0:03]</code> lines all
-                work. Captions sync to the audio and burn into the MP4.
-              </p>
-              {captionError && <div className="note note--bad">{captionError}</div>}
-            </div>
-          ) : (
-            <>
-              <div className="cap-bar">
-                <button
-                  type="button"
-                  className={`cap-switch ${captionsOn ? "is-on" : ""}`}
-                  onClick={() => setCaptionsOn(!captionsOn)}
-                  aria-pressed={captionsOn}
-                >
-                  <span className="cap-switch__box" />
-                  {captionsOn ? "On" : "Off"}
-                </button>
-                <span className="cap-meta">
-                  <span className="cap-meta__name">{captionName || "captions"}</span>
-                  {captionCues.length} lines ·{" "}
-                  <button type="button" className="cap-replace" onClick={() => capInputRef.current && capInputRef.current.click()}>replace</button>
-                </span>
-              </div>
-
-              <div className="cap-body" aria-disabled={!captionsOn}>
-                <div className="mini-h">Style</div>
-                <div className="transitions__chips">
-                  {CAPTION_STYLE_LIST.map((st) => (
-                    <button
-                      key={st.id}
-                      type="button"
-                      className={`trchip ${captionStyle === st.id ? "is-on" : ""}`}
-                      onClick={() => setCaptionStyle(st.id)}
-                    >
-                      {st.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mini-h" style={{ marginTop: 12 }}>Size</div>
-                <div className="seg">
-                  {[["sm", "Small"], ["md", "Medium"], ["lg", "Large"]].map(([id, lbl]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className={captionFontScale == null && captionSize === id ? "is-on" : ""}
-                      onClick={() => { setCaptionSize(id); setCaptionFontScale && setCaptionFontScale(null); }}
-                    >{lbl}</button>
-                  ))}
-                </div>
-
-                <div className="mini-h" style={{ marginTop: 12 }}>Font size (fine-tune)</div>
-                <label className="trdur">
-                  <input
-                    type="range" min={0.03} max={0.10} step={0.002}
-                    value={captionFontScale != null ? captionFontScale : (CAPTION_SIZES[captionSize] || CAPTION_SIZES.md)}
-                    onChange={(e) => setCaptionFontScale && setCaptionFontScale(+e.target.value)}
-                  />
-                  <span className="trdur__val">
-                    {Math.round((captionFontScale != null ? captionFontScale : (CAPTION_SIZES[captionSize] || CAPTION_SIZES.md)) * 1000) / 10}%
-                  </span>
-                </label>
-                {captionFontScale != null && (
-                  <button type="button" className="cap-replace" onClick={() => setCaptionFontScale && setCaptionFontScale(null)}>
-                    reset to preset
-                  </button>
-                )}
-
-                <div className="mini-h" style={{ marginTop: 12 }}>Line spacing (2-line captions)</div>
-                <label className="trdur">
-                  <input
-                    type="range" min={1.0} max={2.2} step={0.05}
-                    value={captionLineHeight != null ? captionLineHeight : captionLineHeightDefault(captionStyle)}
-                    onChange={(e) => setCaptionLineHeight && setCaptionLineHeight(+e.target.value)}
-                  />
-                  <span className="trdur__val">
-                    {(captionLineHeight != null ? captionLineHeight : captionLineHeightDefault(captionStyle)).toFixed(2)}×
-                  </span>
-                </label>
-                {captionLineHeight != null && (
-                  <button type="button" className="cap-replace" onClick={() => setCaptionLineHeight && setCaptionLineHeight(null)}>
-                    reset to default
-                  </button>
-                )}
-              </div>
-              {captionError && <div className="note note--bad">{captionError}</div>}
-            </>
-          )}
-        </div>
-
-      </aside>
-
       <input
         ref={fileInputRef} type="file" accept={coarse ? undefined : "image/*,video/*"} hidden
         onChange={onPickFile}
       />
-      <input
-        ref={replaceInputRef} type="file" accept={coarse ? undefined : "image/*,video/*"} hidden
-        onChange={onPickReplacement}
+
+      <InspectorModal
+        inspect={inspect} onClose={closeInspect}
+        clips={clips} imageEls={imageEls} imageClips={imageClips} imageCount={imageCount}
+        videoInfoByName={videoInfoByName} volumeByName={volumeByName} setVolume={setVolume}
+        trimByName={trimByName} setTrim={setTrim} fitByName={fitByName} setFit={setFit}
+        motionByName={motionByName} setMotion={setMotion}
+        effectByName={effectByName} setClipEffect={setClipEffect} removeClipEffect={removeClipEffect}
+        replaceImage={replaceImage} removeImage={removeImage}
+        coarse={coarse}
       />
-      <input
-        ref={capInputRef} type="file" accept=".srt,.vtt,.txt,text/plain" hidden
-        onChange={onPickCaption}
-      />
-
-      {inspect && (() => {
-        const insClip = clips.find((c) => c.name === inspect);
-        const el = imageEls[inspect];
-        const num = insClip ? imageClips.indexOf(insClip) + 1 : 0;
-        const curUrl = pendUrl || (el && el.url);
-        const pendIsVid = !!(pendFile && pendFile.type && pendFile.type.startsWith("video/"));
-        const isVid = !!(el && el.isVideo) && !pendUrl;
-        const vinfo = videoInfoByName[inspect] || {};
-        const vol = volumeByName[inspect] == null ? 0.5 : volumeByName[inspect];
-        const inPt = trimByName[inspect] || 0;
-        const kind = isVid ? "Video" : "Image";
-        const slotDur = (insClip && insClip.duration) || 0;
-        const vdur = vinfo.duration || 0;
-        const longer = !!(vdur && insClip && vdur > slotDur + 0.05);
-        const shorter = !!(vdur && insClip && vdur < slotDur - 0.05);
-        const diff = longer || shorter;
-        // Default by length: longer clip trims (1x), shorter fills the slot (fit/slow).
-        const fitMode = fitByName[inspect] || (longer ? "trim" : "fit");
-        const speed = (diff && slotDur > 0) ? (vdur / slotDur) : 1;
-        return (
-          <div className="modal" role="dialog" aria-modal="true" onClick={closeInspect}>
-            <div className="modal__card" onClick={(e) => e.stopPropagation()}>
-              <div className="modal__head">
-                <span className="modal__title">
-                  {num ? `${kind} ${num} of ${imageCount}` : kind}
-                  {insClip && <span className="modal__at"> · {tc(insClip.start)}</span>}
-                </span>
-                <button className="modal__x" onClick={closeInspect} aria-label="Close">✕</button>
-              </div>
-
-              <div className="modal__stage">
-                {pendUrl ? (
-                  // A chosen-but-not-applied replacement: a video needs a <video>,
-                  // not an <img> (an <img> with a video URL just shows black).
-                  pendIsVid
-                    ? <video src={pendUrl} className="modal__stagevid" controls muted playsInline preload="metadata" />
-                    : <img src={pendUrl} alt="" />
-                ) : isVid && vinfo.url ? (
-                  <video
-                    ref={modalVideoRef} src={vinfo.url} className="modal__stagevid"
-                    controls muted playsInline preload="metadata"
-                    onLoadedMetadata={(e) => {
-                      const v = e.currentTarget;
-                      try { v.currentTime = inPt; } catch { /* ignore */ }
-                      v.playbackRate = (diff && fitMode === "fit") ? Math.min(16, Math.max(0.0625, speed)) : 1;
-                    }}
-                  />
-                ) : (curUrl && <img src={curUrl} alt="" />)}
-                {pendUrl && <span className="modal__flag">New — not applied yet</span>}
-              </div>
-              <div className="modal__file">
-                {pendFile ? pendFile.name : (el && el.fileName) || ""}
-              </div>
-
-              {insClip && !insClip.gap && (
-                <div className="modal__motion">
-                  <span className="modal__motion-label">Motion (Ken Burns zoom)</span>
-                  <div className="seg">
-                    {[["none", "None"], ["zoomin", "Zoom in"], ["zoomout", "Zoom out"]].map(([id, lbl]) => (
-                      <button
-                        key={id}
-                        type="button"
-                        className={((motionByName && motionByName[inspect]) || "none") === id ? "is-on" : ""}
-                        onClick={() => setMotion && setMotion(inspect, id)}
-                      >{lbl}</button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {insClip && !insClip.gap && isVid && (
-                <div className="modal__vid">
-                  {diff && (
-                    <div className="modal__fit">
-                      <span className="modal__motion-label">
-                        {longer ? "Clip is longer than its slot" : "Clip is shorter than its slot"} · {vinfo.duration.toFixed(1)}s clip, {insClip.duration.toFixed(1)}s slot
-                      </span>
-                      <div className="seg">
-                        <button
-                          type="button" className={fitMode === "fit" ? "is-on" : ""}
-                          onClick={() => setFit && setFit(inspect, "fit")}
-                        >Fit to slot</button>
-                        <button
-                          type="button" className={fitMode === "trim" ? "is-on" : ""}
-                          onClick={() => setFit && setFit(inspect, "trim")}
-                        >Trim (1×)</button>
-                      </div>
-                      {fitMode === "fit"
-                        ? <span className="modal__hint">{longer
-                            ? `Whole clip fast-forwarded at ${speed.toFixed(1)}× to fit the slot.`
-                            : `Whole clip slowed to ${speed.toFixed(2)}× to fill the slot.`}</span>
-                        : <span className="modal__hint">Plays at 1× — set a start point below;{longer ? " the rest is cut off." : " the last frame then holds to fill the slot."}</span>}
-                    </div>
-                  )}
-                  {(!diff || fitMode === "trim") && (() => {
-                    const dur = vinfo.duration || 0;
-                    const remain = Math.max(0, dur - inPt);        // footage left from the start point
-                    const playLen = Math.min(insClip.duration, remain); // real-time footage shown
-                    const holdFor = Math.max(0, insClip.duration - remain); // seconds the last frame holds
-                    return (
-                      <div className="modal__trim">
-                        <span className="modal__motion-label">Trim — drag the handle to set where the clip starts</span>
-                        {/* Video-editor style trim bar: the fill shows the part that plays;
-                            dragging the handle scrubs the preview above and sets the start. */}
-                        <div className="trimbar">
-                          <div
-                            className="trimbar__fill"
-                            style={{ left: `${dur ? (inPt / dur) * 100 : 0}%`, width: `${dur ? (playLen / dur) * 100 : 0}%` }}
-                          />
-                          <input
-                            className="trimbar__range"
-                            type="range" min={0} max={Math.max(0.1, dur)} step={0.05}
-                            value={Math.min(inPt, Math.max(0.1, dur))}
-                            onChange={(e) => {
-                              const val = +e.target.value;
-                              if (setTrim) setTrim(inspect, val);
-                              if (modalVideoRef.current) { try { modalVideoRef.current.currentTime = val; } catch { /* ignore */ } }
-                            }}
-                          />
-                        </div>
-                        <span className="modal__hint">
-                          Starts at {inPt.toFixed(1)}s of {dur.toFixed(1)}s · plays {playLen.toFixed(1)}s in a {insClip.duration.toFixed(1)}s slot
-                        </span>
-                        {holdFor > 0.05 && (
-                          <span className="modal__hint modal__hint--warn">
-                            Only {remain.toFixed(1)}s of footage left — the last frame holds for {holdFor.toFixed(1)}s to fill the slot.
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })()}
-                  <div className="modal__vol">
-                    <span className="modal__motion-label">Clip audio volume</span>
-                    <div className="modal__slider">
-                      <input
-                        type="range" min={0} max={1} step={0.05} value={vol}
-                        onChange={(e) => setVolume && setVolume(inspect, +e.target.value)}
-                      />
-                      <span className="trdur__val">{Math.round(vol * 100)}%</span>
-                    </div>
-                    <span className="modal__hint">Plays under the voiceover. 0% = silent.</span>
-                  </div>
-                </div>
-              )}
-
-              {!pendUrl ? (
-                <div className="modal__actions">
-                  <button className="mbtn mbtn--primary" onClick={() => replaceInputRef.current && replaceInputRef.current.click()}>
-                    Replace {isVid ? "video" : "image"}
-                  </button>
-                  <button className="mbtn mbtn--danger" onClick={removeInspected}>Remove from timeline</button>
-                </div>
-              ) : (
-                <div className="modal__actions">
-                  <button className="mbtn mbtn--primary" onClick={applyReplacement}>Apply replacement</button>
-                  <button className="mbtn" onClick={() => replaceInputRef.current && replaceInputRef.current.click()}>Choose different</button>
-                  <button className="mbtn mbtn--ghost" onClick={clearPend}>Cancel</button>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })()}
     </section>
   );
 }

@@ -29,6 +29,11 @@
   font-display: swap;
 }
 
+/* Bundled OFL caption fonts (preview canvas + WebCodecs export share these). */
+@font-face { font-family: "Montserrat"; src: url("/fonts/montserrat.ttf") format("truetype"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Anton"; src: url("/fonts/anton.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Poppins"; src: url("/fonts/poppins.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+
 * { box-sizing: border-box; }
 
 /* Dark, subtle scrollbars — the default OS bars (white/grey) clash with the
@@ -276,13 +281,6 @@ body {
 .build-hint { font-size: 12.5px; color: var(--muted); }
 
 /* ---------- Editor: fills the viewport, no window scroll ---------- */
-.editor {
-  flex: 1; min-height: 0; width: 100%;
-  display: grid; grid-template-columns: minmax(0,1fr) 320px; gap: 12px;
-}
-.main { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
-.side { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 2px; }
-
 .viewer {
   flex: 1; min-height: 0;
   background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px;
@@ -294,6 +292,98 @@ body {
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
 }
 .viewer__canvas { width: 100%; height: 100%; display: block; object-fit: contain; }
+
+/* ---------- CapCut-style shell: tabbed left panel + full-width timeline ---------- */
+.editor2 {
+  flex: 1; min-height: 0; width: 100%;
+  display: grid;
+  grid-template-columns: var(--left-w, 340px) minmax(0, 1fr) 320px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "left center right"
+    "timeline timeline timeline";
+  gap: 12px;
+}
+.editor2__left { grid-area: left; position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+
+/* Drag handle between the left panel and the preview (right panel stays fixed).
+   Sits in the 12px grid gap on the left panel's right edge. */
+.editor2__resizer {
+  position: absolute; top: 0; bottom: 0; right: -7px; width: 14px; z-index: 6;
+  cursor: col-resize; touch-action: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.editor2__resizer::after {
+  content: ""; width: 3px; height: 42px; border-radius: 2px;
+  background: var(--line); transition: background .12s;
+}
+.editor2__resizer:hover::after, .editor2__resizer.is-drag::after { background: var(--accent); }
+.editor2__center { grid-area: center; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+.editor2__right { grid-area: right; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 2px; }
+.editor2__timeline { grid-area: timeline; }
+
+/* Left panel: tab strip + scrollable body, wrapped in a panel surface */
+.leftpanel { flex: 1; min-height: 0; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.tabs { flex: none; display: flex; gap: 6px; padding: 10px 10px 0; overflow-x: auto; }
+.tab {
+  flex: none; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--muted);
+  background: transparent; border: 1px solid transparent; border-radius: 9px 9px 0 0;
+  padding: 8px 12px; cursor: pointer; white-space: nowrap;
+  transition: color .12s, background .12s, border-color .12s;
+}
+.tab:hover { color: var(--text); }
+.tab.is-on { color: var(--accent); background: var(--panel-2); border-color: var(--line); border-bottom-color: var(--panel-2); }
+.tabpanel { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 12px; }
+
+/* Effects tab placeholder */
+.effects-soon {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  min-height: 220px; text-align: center; color: var(--muted);
+  border: 1.5px dashed var(--line); border-radius: 12px; padding: 24px; background: var(--panel-2);
+}
+.effects-soon__title { font-size: 14px; font-weight: 700; color: var(--text); }
+.effects-soon__sub { font-size: 12.5px; color: var(--faint); max-width: 240px; line-height: 1.5; }
+
+/* Square transition grid (CapCut-style tiles with a live mini-preview) */
+.trgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(82px, 1fr)); gap: 8px; }
+.trtile {
+  display: flex; flex-direction: column; gap: 4px; padding: 0;
+  background: none; border: none; cursor: pointer; font: inherit; min-width: 0;
+}
+.trtile__cv {
+  width: 100%; aspect-ratio: 1 / 1; display: block; background: #000;
+  border-radius: 8px; border: 1.5px solid var(--line);
+  transition: border-color .12s, box-shadow .12s;
+}
+.trtile:hover .trtile__cv { border-color: var(--muted); }
+.trtile.is-on .trtile__cv { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.trtile__label {
+  font-size: 11px; color: var(--muted); text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.trtile:hover .trtile__label { color: var(--text); }
+.trtile.is-on .trtile__label { color: var(--accent); }
+
+/* Caption style tiles (Aa preview), same look as the transition grid */
+.captiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(82px, 1fr)); gap: 8px; }
+.captile { display: flex; flex-direction: column; gap: 4px; padding: 0; background: none; border: none; cursor: pointer; font: inherit; min-width: 0; }
+.captile__cv { width: 100%; aspect-ratio: 1 / 1; display: block; border-radius: 8px; border: 1.5px solid var(--line); transition: border-color .12s, box-shadow .12s; }
+.captile:hover .captile__cv { border-color: var(--muted); }
+.captile.is-on .captile__cv { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.captile__label { font-size: 11px; color: var(--muted); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.captile:hover .captile__label { color: var(--text); }
+.captile.is-on .captile__label { color: var(--accent); }
+
+/* Responsive: stack the shell on narrow screens */
+@media (max-width: 860px) {
+  .editor2 { display: flex; flex-direction: column; }
+  .editor2__right { overflow: visible; }
+  .leftpanel { flex: none; }
+  .tabpanel { max-height: 60vh; }
+  .editor2__resizer { display: none; } /* no side-by-side columns to resize */
+}
 
 /* Panels */
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
@@ -739,11 +829,10 @@ button:focus-visible, .dz:focus-visible, a:focus-visible {
 
 /* ---------- Responsive ---------- */
 @media (max-width: 860px) {
-  /* Below tablet: drop the fixed-viewport shell and scroll the page. */
+  /* Below tablet: drop the fixed-viewport shell and scroll the page.
+     (The .editor2 shell's own stacking rules live next to its definition above.) */
   .app { height: auto; min-height: 100dvh; }
   .content { display: block; }
-  .editor { display: flex; flex-direction: column; }
-  .side { overflow: visible; }
   .viewer { flex: none; }
   .viewer__frame { flex: none; aspect-ratio: 16 / 9; }
   .onboard__zones { grid-template-columns: 1fr; }

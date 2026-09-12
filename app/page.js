@@ -9,7 +9,7 @@ import { getWaveformPeaks } from "../lib/waveform";
 import { renderVideo, cancelRender, getActiveRender, reconnectRender, probeBackend } from "../lib/serverRender";
 import { renderWebCodecs, webCodecsCanRender, pickRenderProfile, startKeepAwake } from "../lib/webcodecsRender";
 import { DEFAULT_TRANSITION_DURATION, mixTransitions } from "../lib/transitions";
-import { parseTranscript } from "../lib/captions";
+import { parseTranscript, captionPosPct } from "../lib/captions";
 import Dropzone from "../components/Dropzone";
 import Editor from "../components/Editor";
 import ProjectsHome from "../components/ProjectsHome";
@@ -126,11 +126,14 @@ export default function Home() {
   const [transitionDuration, setTransitionDuration] = useState(DEFAULT_TRANSITION_DURATION);
   const [fadeIn, setFadeIn] = useState(0.5);          // opening fade seconds (0 = off)
   const [fadeOut, setFadeOut] = useState(0.6);        // ending fade seconds (0 = off)
+  const [effectId, setEffectId] = useState("none");   // global atmosphere effect (lib/effects)
+  const [effectIntensity, setEffectIntensity] = useState(0.5); // 0..1
   const [motionByName, setMotionByName] = useState({}); // clip name -> zoomin | zoomout
   const [motionAmount, setMotionAmount] = useState(0.08); // Ken Burns zoom depth (0–0.2)
   const [trimByName, setTrimByName] = useState({});   // video clip name -> in-point seconds
   const [volumeByName, setVolumeByName] = useState({}); // video clip name -> 0..1 (default 0.5)
   const [fitByName, setFitByName] = useState({});     // video clip name -> "fit" (fast-fwd, default) | "trim" (1x)
+  const [effectByName, setEffectByName] = useState({}); // clip name -> { id, intensity } (per-clip effect override)
   const [trimEnd, setTrimEnd] = useState(0); // export end point (0 = untrimmed / full audio)
   const [captionRaw, setCaptionRaw] = useState(null); // uploaded transcript text
   const [captionName, setCaptionName] = useState(null);
@@ -139,6 +142,8 @@ export default function Home() {
   const [captionSize, setCaptionSize] = useState("md");
   const [captionLineHeight, setCaptionLineHeight] = useState(null); // null = per-style default
   const [captionFontScale, setCaptionFontScale] = useState(null);   // null = use the size preset
+  const [captionFont, setCaptionFont] = useState("default");        // caption font id (CAPTION_FONTS)
+  const [captionPosition, setCaptionPosition] = useState(0); // vertical %: 100=top, 50=mid, 0=bottom
   const [importing, setImporting] = useState(null);   // { done, total } while decoding imports
   const [built, setBuilt] = useState(false);          // committed images to the timeline?
   const [busy, setBusy] = useState(false);
@@ -319,6 +324,13 @@ export default function Home() {
   const setFit = useCallback((name, mode) => {
     setFitByName((prev) => ({ ...prev, [name]: mode }));
   }, []);
+  // Per-clip effect override: patch merges into { id:"none", intensity:0.5 }.
+  const setClipEffect = useCallback((name, patch) => {
+    setEffectByName((prev) => ({ ...prev, [name]: { id: "none", intensity: 0.5, ...(prev[name] || {}), ...patch } }));
+  }, []);
+  const removeClipEffect = useCallback((name) => {
+    setEffectByName((prev) => { const next = { ...prev }; delete next[name]; return next; });
+  }, []);
   const applyMotionAll = useCallback((type, names) => {
     setMotionByName(() => { const next = {}; for (const n of names) next[n] = type; return next; });
   }, []);
@@ -457,10 +469,12 @@ export default function Home() {
     setAudioFile(null); setAudioUrl(null); setAudioDuration(0); setPeaks([]);
     setAspect("16:9"); setFps(coarse ? 24 : 30); setRenderQuality(coarse ? "720p" : "full");
     setTransitionDuration(DEFAULT_TRANSITION_DURATION); setFadeIn(0.5); setFadeOut(0.6);
-    setMotionByName({}); setMotionAmount(0.08); setTrimByName({}); setVolumeByName({}); setFitByName({});
+    setEffectId("none"); setEffectIntensity(0.5);
+    setMotionByName({}); setMotionAmount(0.08); setTrimByName({}); setVolumeByName({}); setFitByName({}); setEffectByName({});
     setTrimEnd(0);
     setCaptionRaw(null); setCaptionName(null); setCaptionsOn(false); setCaptionStyle("classic");
     setCaptionSize("md"); setCaptionLineHeight(null); setCaptionFontScale(null);
+    setCaptionFont("default"); setCaptionPosition(0);
     setError(null); setOutUrl(null); setProgress(0);
     idRef.current = 0;
     resetDoc({ slots: [], transitionsByName: {} });
@@ -491,9 +505,9 @@ export default function Home() {
   // Serialize the edit state (no media bytes) for the projects store.
   const buildProjectData = useCallback(() => ({
     v: 1,
-    settings: { aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, motionAmount, trimEnd },
-    maps: { motionByName, trimByName, volumeByName, fitByName },
-    captions: { captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale },
+    settings: { aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, motionAmount, trimEnd, effectId, effectIntensity },
+    maps: { motionByName, trimByName, volumeByName, fitByName, effectByName },
+    captions: { captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition },
     transitionsByName,
     slots: slots.map((s) => ({
       id: s.id, seconds: s.seconds, empty: !!s.empty,
@@ -503,9 +517,10 @@ export default function Home() {
     audioName: audioFile ? audioFile.name : null,
     idCounter: idRef.current,
     built,
-  }), [aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, motionAmount, trimEnd,
-      motionByName, trimByName, volumeByName, fitByName,
+  }), [aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, effectId, effectIntensity, motionAmount, trimEnd,
+      motionByName, trimByName, volumeByName, fitByName, effectByName,
       captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale,
+      captionFont, captionPosition,
       transitionsByName, slots, audioFile, built]);
 
   const saveCurrent = useCallback(async () => {
@@ -533,8 +548,9 @@ export default function Home() {
     const t = setTimeout(() => { if (saveRef.current) saveRef.current(); }, 1200);
     return () => clearTimeout(t);
   }, [view, currentProject, loadingProject, slots, transitionsByName, aspect, fps, renderQuality, transitionDuration,
-      fadeIn, fadeOut, motionByName, motionAmount, trimByName, volumeByName, fitByName, trimEnd,
+      fadeIn, fadeOut, effectId, effectIntensity, motionByName, motionAmount, trimByName, volumeByName, fitByName, effectByName, trimEnd,
       captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale,
+      captionFont, captionPosition,
       audioFile, built]);
 
   const openProject = useCallback(async (id) => {
@@ -578,15 +594,18 @@ export default function Home() {
       setAspect(st.aspect ?? "16:9"); setFps(st.fps ?? 30); setRenderQuality(st.renderQuality ?? "full");
       setTransitionDuration(st.transitionDuration ?? DEFAULT_TRANSITION_DURATION);
       setFadeIn(st.fadeIn ?? 0.5); setFadeOut(st.fadeOut ?? 0.6);
+      setEffectId(st.effectId ?? "none"); setEffectIntensity(st.effectIntensity ?? 0.5);
       setMotionAmount(st.motionAmount ?? 0.08); setTrimEnd(st.trimEnd ?? 0);
       const mp = d.maps || {};
       setMotionByName(mp.motionByName || {}); setTrimByName(mp.trimByName || {});
       setVolumeByName(mp.volumeByName || {}); setFitByName(mp.fitByName || {});
+      setEffectByName(mp.effectByName || {});
       const cp = d.captions || {};
       setCaptionRaw(cp.captionRaw ?? null); setCaptionName(cp.captionName ?? null);
       setCaptionsOn(!!cp.captionsOn); setCaptionStyle(cp.captionStyle ?? "classic");
       setCaptionSize(cp.captionSize ?? "md"); setCaptionLineHeight(cp.captionLineHeight ?? null);
       setCaptionFontScale(cp.captionFontScale ?? null);
+      setCaptionFont(cp.captionFont ?? "default"); setCaptionPosition(captionPosPct(cp.captionPosition ?? 0));
       idRef.current = d.idCounter || newSlots.length;
       setBuilt(!!d.built);
     } finally { setLoadingProject(false); }
@@ -671,8 +690,8 @@ export default function Home() {
       const blob = await renderVideo({
         clips: exportClips, imagesByName, videosByName, audioFile,
         width: renderDims.width, height: renderDims.height, fps,
-        transitions, transitionDuration, motions, motionAmount, trims, volumes, speeds, fadeIn, fadeOut,
-        captions, captionStyle, captionSize, captionLineHeight, captionFontScale,
+        transitions, transitionDuration, motions, motionAmount, trims, volumes, speeds, fadeIn, fadeOut, effectId, effectIntensity, effectByName,
+        captions, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition,
         onProgress: setProgress,
       });
       setOutUrl(URL.createObjectURL(blob));
@@ -682,8 +701,8 @@ export default function Home() {
       if (!cancelRef.current) setBusy(false);
     }
   }, [clips, exportDuration, imagesByName, videosByName, audioFile, renderDims, fps, transitionsByName, transitionDuration,
-      motionByName, motionAmount, trimByName, volumeByName, fitByName, videoInfoByName, fadeIn, fadeOut,
-      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale]);
+      motionByName, motionAmount, trimByName, volumeByName, fitByName, videoInfoByName, fadeIn, fadeOut, effectId, effectIntensity, effectByName,
+      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition]);
 
   // --- SPIKE: WebCodecs GPU render (video-only, no audio). Proves the pipeline. ---
   const [wcBusy, setWcBusy] = useState(false);
@@ -773,7 +792,8 @@ export default function Home() {
           transitions, transitionDuration, motions, motionAmount, audioFile,
           videosByName, trims, speeds, volumes,
           cues: captionsOn && captionCues.length ? captionCues : null,
-          captionStyle, captionSize, captionLineHeight, captionFontScale,
+          captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition,
+          effectId, effectIntensity, effectByName,
         },
         imagesByName,
         (frac, phase) => { setWcProgress(frac); if (phase) setWcPhase(phase); },
@@ -838,9 +858,9 @@ export default function Home() {
       setWcProgress(0);
       setWcPhase("Rendering");
     }
-  }, [clips, exportDuration, transitionsByName, motionByName, imagesByName, renderDims, fps, transitionDuration, motionAmount, audioFile,
+  }, [clips, exportDuration, transitionsByName, motionByName, imagesByName, renderDims, fps, transitionDuration, motionAmount, effectId, effectIntensity, effectByName, audioFile,
       videosByName, videoInfoByName, fitByName, trimByName, volumeByName, currentProject, flashDone, wcProfile,
-      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale]);
+      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition]);
 
   // Browser can't export video (no H.264 WebCodecs, no render backend) — block the
   // whole app; there's no point letting them create projects they can't render.
@@ -1067,8 +1087,11 @@ export default function Home() {
           applyTransitionMix={applyTransitionMix}
           setTransitionDuration={setTransitionDuration}
           fadeIn={fadeIn} setFadeIn={setFadeIn}
+          effectId={effectId} setEffectId={setEffectId}
+          effectIntensity={effectIntensity} setEffectIntensity={setEffectIntensity}
           fadeOut={fadeOut} setFadeOut={setFadeOut}
           motionByName={motionByName} setMotion={setMotion}
+          effectByName={effectByName} setClipEffect={setClipEffect} removeClipEffect={removeClipEffect}
           applyMotionAll={applyMotionAll} applyMotionAlternate={applyMotionAlternate}
           motionAmount={motionAmount} setMotionAmount={setMotionAmount}
           videoInfoByName={videoInfoByName}
@@ -1082,6 +1105,8 @@ export default function Home() {
           captionSize={captionSize} setCaptionSize={setCaptionSize}
           captionLineHeight={captionLineHeight} setCaptionLineHeight={setCaptionLineHeight}
           captionFontScale={captionFontScale} setCaptionFontScale={setCaptionFontScale}
+          captionFont={captionFont} setCaptionFont={setCaptionFont}
+          captionPosition={captionPosition} setCaptionPosition={setCaptionPosition}
           captionName={captionName} captionError={captionError} onCaptionFile={onCaptionFile}
         />
       )}
