@@ -10,6 +10,7 @@ import { renderVideo, cancelRender, getActiveRender, reconnectRender, probeBacke
 import { renderWebCodecs, webCodecsCanRender, pickRenderProfile, startKeepAwake } from "../lib/webcodecsRender";
 import { DEFAULT_TRANSITION_DURATION, mixTransitions } from "../lib/transitions";
 import { parseTranscript, captionPosPct } from "../lib/captions";
+import { makeSfx, serializeSfx } from "../lib/sfx";
 import Dropzone from "../components/Dropzone";
 import Editor from "../components/Editor";
 import ProjectsHome from "../components/ProjectsHome";
@@ -144,6 +145,9 @@ export default function Home() {
   const [captionFontScale, setCaptionFontScale] = useState(null);   // null = use the size preset
   const [captionFont, setCaptionFont] = useState("default");        // caption font id (CAPTION_FONTS)
   const [captionPosition, setCaptionPosition] = useState(0); // vertical %: 100=top, 50=mid, 0=bottom
+  const [sfx, setSfx] = useState([]);            // placed sound effects: [{ id, name, src, at, volume }]
+  const [sfxUploads, setSfxUploads] = useState([]); // uploaded sound library: [{ mediaId, label, url, _file }]
+  const [selectedSound, setSelectedSound] = useState(null); // { name, src, url } to place on the FX track
   const [importing, setImporting] = useState(null);   // { done, total } while decoding imports
   const [built, setBuilt] = useState(false);          // committed images to the timeline?
   const [busy, setBusy] = useState(false);
@@ -331,6 +335,43 @@ export default function Home() {
   const removeClipEffect = useCallback((name) => {
     setEffectByName((prev) => { const next = { ...prev }; delete next[name]; return next; });
   }, []);
+
+  // ---- Sound effects ----
+  const addSfx = useCallback((at) => {
+    setSelectedSound((sel) => {
+      if (sel) setSfx((prev) => [...prev, makeSfx(sel.name, sel.src, at)]);
+      return sel;
+    });
+  }, []);
+  const moveSfx = useCallback((id, at) => {
+    setSfx((prev) => prev.map((s) => (s.id === id ? { ...s, at: Math.max(0, +at || 0) } : s)));
+  }, []);
+  const setSfxVolume = useCallback((id, v) => {
+    setSfx((prev) => prev.map((s) => (s.id === id ? { ...s, volume: Math.min(1, Math.max(0, +v || 0)) } : s)));
+  }, []);
+  const removeSfx = useCallback((id) => {
+    setSfx((prev) => prev.filter((s) => s.id !== id));
+  }, []);
+  const uploadSfx = useCallback((file) => {
+    if (!file) return;
+    const mediaId = `sfx-${newId()}`;
+    const url = URL.createObjectURL(file);
+    const label = file.name.replace(/\.[^.]+$/, "") || "sound";
+    const entry = { mediaId, label, url, _file: file };
+    setSfxUploads((prev) => [...prev, entry]);
+    setSelectedSound({ name: label, src: { kind: "upload", mediaId }, url });
+  }, []);
+  // Resolve a runtime url for each placed instance (public path or uploaded objectURL).
+  const sfxUrlFor = useCallback((src) => {
+    if (!src) return null;
+    if (src.kind === "lib") return src.file;
+    const u = sfxUploads.find((x) => x.mediaId === src.mediaId);
+    return u ? u.url : null;
+  }, [sfxUploads]);
+  const sfxResolved = useMemo(
+    () => sfx.map((s) => ({ id: s.id, at: s.at, volume: s.volume, url: sfxUrlFor(s.src) })),
+    [sfx, sfxUrlFor]
+  );
   const applyMotionAll = useCallback((type, names) => {
     setMotionByName(() => { const next = {}; for (const n of names) next[n] = type; return next; });
   }, []);
@@ -475,6 +516,7 @@ export default function Home() {
     setCaptionRaw(null); setCaptionName(null); setCaptionsOn(false); setCaptionStyle("classic");
     setCaptionSize("md"); setCaptionLineHeight(null); setCaptionFontScale(null);
     setCaptionFont("default"); setCaptionPosition(0);
+    setSfx([]); setSfxUploads([]); setSelectedSound(null);
     setError(null); setOutUrl(null); setProgress(0);
     idRef.current = 0;
     resetDoc({ slots: [], transitionsByName: {} });
@@ -508,6 +550,8 @@ export default function Home() {
     settings: { aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, motionAmount, trimEnd, effectId, effectIntensity },
     maps: { motionByName, trimByName, volumeByName, fitByName, effectByName },
     captions: { captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition },
+    sfx: serializeSfx(sfx),
+    sfxUploads: sfxUploads.map((u) => ({ mediaId: u.mediaId, label: u.label })),
     transitionsByName,
     slots: slots.map((s) => ({
       id: s.id, seconds: s.seconds, empty: !!s.empty,
@@ -520,7 +564,7 @@ export default function Home() {
   }), [aspect, fps, renderQuality, transitionDuration, fadeIn, fadeOut, effectId, effectIntensity, motionAmount, trimEnd,
       motionByName, trimByName, volumeByName, fitByName, effectByName,
       captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale,
-      captionFont, captionPosition,
+      captionFont, captionPosition, sfx, sfxUploads,
       transitionsByName, slots, audioFile, built]);
 
   const saveCurrent = useCallback(async () => {
@@ -536,10 +580,11 @@ export default function Home() {
       const wanted = new Map();
       if (audioFile) wanted.set("audio", audioFile);
       for (const s of slots) if (!s.empty && s.file) wanted.set(s.id, s.file);
+      for (const u of sfxUploads) if (u._file) wanted.set(u.mediaId, u._file);
       await syncMedia(proj.id, wanted);
       try { setStorage(await storageEstimate()); } catch (_) {}
     } catch (_) { /* storage full or unavailable — keep editing */ }
-  }, [currentProject, loadingProject, makeThumb, exportDuration, clips.length, buildProjectData, audioFile, slots]);
+  }, [currentProject, loadingProject, makeThumb, exportDuration, clips.length, buildProjectData, audioFile, slots, sfxUploads]);
   saveRef.current = saveCurrent;
 
   // Debounced autosave whenever the composition changes.
@@ -550,7 +595,7 @@ export default function Home() {
   }, [view, currentProject, loadingProject, slots, transitionsByName, aspect, fps, renderQuality, transitionDuration,
       fadeIn, fadeOut, effectId, effectIntensity, motionByName, motionAmount, trimByName, volumeByName, fitByName, effectByName, trimEnd,
       captionRaw, captionName, captionsOn, captionStyle, captionSize, captionLineHeight, captionFontScale,
-      captionFont, captionPosition,
+      captionFont, captionPosition, sfx, sfxUploads,
       audioFile, built]);
 
   const openProject = useCallback(async (id) => {
@@ -582,7 +627,16 @@ export default function Home() {
         const img = sm.isVideo ? await loadVideoEl(file) : await loadImageEl(file);
         return { id: sm.id, seconds: sm.seconds, file, img, empty: false };
       });
-      const [audio, newSlots] = await Promise.all([audioP, slotsP]);
+      // Uploaded SFX blobs -> objectURLs (bundled sounds need no media).
+      const sfxUpP = mapLimit(d.sfxUploads || [], 8, async (u) => {
+        const blob = await getMedia(id, u.mediaId);
+        if (!blob) return null;
+        const file = new File([blob], `${u.label || "sound"}.wav`, { type: blob.type || "audio/wav" });
+        return { mediaId: u.mediaId, label: u.label || "sound", url: URL.createObjectURL(file), _file: file };
+      });
+      const [audio, newSlots, sfxUp] = await Promise.all([audioP, slotsP, sfxUpP]);
+      setSfxUploads(sfxUp.filter(Boolean));
+      setSfx(d.sfx || []);
       // Commit the loaded project.
       if (audio) {
         setAudioFile(audio.file); setAudioUrl(URL.createObjectURL(audio.file));
@@ -794,6 +848,7 @@ export default function Home() {
           cues: captionsOn && captionCues.length ? captionCues : null,
           captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition,
           effectId, effectIntensity, effectByName,
+          sfx: sfxResolved,
         },
         imagesByName,
         (frac, phase) => { setWcProgress(frac); if (phase) setWcPhase(phase); },
@@ -858,7 +913,7 @@ export default function Home() {
       setWcProgress(0);
       setWcPhase("Rendering");
     }
-  }, [clips, exportDuration, transitionsByName, motionByName, imagesByName, renderDims, fps, transitionDuration, motionAmount, effectId, effectIntensity, effectByName, audioFile,
+  }, [clips, exportDuration, transitionsByName, motionByName, imagesByName, renderDims, fps, transitionDuration, motionAmount, effectId, effectIntensity, effectByName, sfxResolved, audioFile,
       videosByName, videoInfoByName, fitByName, trimByName, volumeByName, currentProject, flashDone, wcProfile,
       captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition]);
 
@@ -1092,6 +1147,9 @@ export default function Home() {
           fadeOut={fadeOut} setFadeOut={setFadeOut}
           motionByName={motionByName} setMotion={setMotion}
           effectByName={effectByName} setClipEffect={setClipEffect} removeClipEffect={removeClipEffect}
+          sfx={sfx} sfxResolved={sfxResolved} sfxUploads={sfxUploads}
+          selectedSound={selectedSound} setSelectedSound={setSelectedSound}
+          addSfx={addSfx} moveSfx={moveSfx} setSfxVolume={setSfxVolume} removeSfx={removeSfx} uploadSfx={uploadSfx}
           applyMotionAll={applyMotionAll} applyMotionAlternate={applyMotionAlternate}
           motionAmount={motionAmount} setMotionAmount={setMotionAmount}
           videoInfoByName={videoInfoByName}
