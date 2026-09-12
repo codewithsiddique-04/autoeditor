@@ -366,6 +366,23 @@ body {
 .trtile:hover .trtile__label { color: var(--text); }
 .trtile.is-on .trtile__label { color: var(--accent); }
 
+/* Sound-effects list (Audio tab) */
+.sfxlist { display: flex; flex-direction: column; gap: 6px; }
+.sfxrow { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); overflow: hidden; }
+.sfxrow.is-on { border-color: var(--accent); background: rgba(231,232,236,.14); }
+.sfxrow__play {
+  flex: none; width: 30px; align-self: stretch; font: inherit; font-size: 11px;
+  color: var(--text); background: transparent; border: none; border-right: 1px solid var(--line);
+  cursor: pointer; padding: 7px 0;
+}
+.sfxrow__play:hover { color: var(--accent); background: var(--elev); }
+.sfxrow__name {
+  flex: 1; text-align: left; font: inherit; font-size: 12.5px; color: var(--text);
+  background: transparent; border: none; cursor: pointer; padding: 7px 10px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sfxrow.is-on .sfxrow__name { color: #dfe6ff; }
+
 /* Caption style tiles (Aa preview), same look as the transition grid */
 .captiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(82px, 1fr)); gap: 8px; }
 .captile { display: flex; flex-direction: column; gap: 4px; padding: 0; background: none; border: none; cursor: pointer; font: inherit; min-width: 0; }
