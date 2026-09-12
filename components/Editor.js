@@ -1,15 +1,13 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Timeline from "./Timeline";
-import {
-  TRANSITION_LIST, transitionOf,
-  MIN_TRANSITION_DURATION, MAX_TRANSITION_DURATION,
-} from "../lib/transitions";
+import { transitionOf } from "../lib/transitions";
 import {
   CAPTION_STYLE_LIST, CAPTION_SIZES, captionAt, drawCaption, captionFontPx, captionLineHeightDefault,
 } from "../lib/captions";
 import { tc, clock } from "../lib/format";
 import ExportPanel from "./panels/ExportPanel";
+import TransitionsPanel from "./panels/TransitionsPanel";
 
 export default function Editor({
   clips, imageEls, audioUrl, duration, peaks, dims,
@@ -60,15 +58,6 @@ export default function Editor({
   }, []);
   const [pendFile, setPendFile] = useState(null);  // chosen replacement, not yet applied
   const [pendUrl, setPendUrl] = useState(null);
-  const [mixMode, setMixMode] = useState(false); // Transitions panel in random-mix mode
-  const [mixPicks, setMixPicks] = useState(() => new Set()); // ephemeral: chosen transitions for the random mix
-  const toggleMix = useCallback((id) => {
-    setMixPicks((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }, []);
 
   // Gap "+" → pick a file to fill an empty slot / lead-in.
   const askAdd = useCallback((name) => {
@@ -473,78 +462,13 @@ export default function Editor({
           outUrl={outUrl} error={error}
         />
 
-        <div className="panel transitions">
-          <div className="transitions__head">
-            <div className="transitions__titlerow">
-              <span className="panel__h">Transitions</span>
-              <button
-                type="button"
-                className={`cap-switch ${mixMode ? "is-on" : ""}`}
-                onClick={() => setMixMode((v) => !v)}
-                aria-pressed={mixMode}
-                title="Randomly apply a set of transitions across all cuts"
-              >
-                <span className="cap-switch__box" />
-                Random mix
-              </button>
-            </div>
-            <span className="transitions__target">
-              {selectedIndex > 0
-                ? `Into image ${selectedImageNum || "—"} · ${tc(selectedClip.start)}`
-                : selectedIndex === 0
-                  ? "First image — no incoming transition"
-                  : "Tap a ◇ cut above to set its transition"}
-            </span>
-          </div>
-
-          <div className="transitions__chips">
-            {TRANSITION_LIST.map((tr) => {
-              const on = mixMode ? mixPicks.has(tr.id) : currentType === tr.id;
-              return (
-                <button
-                  key={tr.id}
-                  type="button"
-                  className={`trchip ${on ? "is-on" : ""}`}
-                  onClick={() => (mixMode ? toggleMix(tr.id) : pickType(tr.id))}
-                >
-                  <span className="trchip__icon">{tr.icon}</span>{tr.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <label className="trdur">
-            <span>Duration</span>
-            <input
-              type="range" min={MIN_TRANSITION_DURATION} max={MAX_TRANSITION_DURATION} step={0.05}
-              value={transitionDuration}
-              onChange={(e) => setTransitionDuration(+e.target.value)}
-            />
-            <span className="trdur__val">{transitionDuration.toFixed(2)}s</span>
-          </label>
-
-          {!mixMode ? (
-            <button
-              type="button" className="trall"
-              onClick={() => applyTransitionAll(currentType, clips.map((c) => c.name))}
-            >
-              Apply “{transitionOf(currentType).label}” to all cuts
-            </button>
-          ) : (
-            <div className="trmix-foot">
-              <span className="trmix-count">
-                {mixPicks.size ? `Picked ${mixPicks.size}` : "None picked"}
-              </span>
-              <button
-                type="button" className="trall trmix-apply"
-                disabled={mixPicks.size === 0}
-                onClick={() => applyTransitionMix([...mixPicks], clips.map((c) => c.name))}
-              >
-                Apply random mix to video
-              </button>
-            </div>
-          )}
-        </div>
+        <TransitionsPanel
+          clips={clips}
+          selectedIndex={selectedIndex} selectedClip={selectedClip} selectedImageNum={selectedImageNum}
+          currentType={currentType} pickType={pickType}
+          transitionDuration={transitionDuration} setTransitionDuration={setTransitionDuration}
+          applyTransitionAll={applyTransitionAll} applyTransitionMix={applyTransitionMix}
+        />
 
         <div className="panel">
           <h2 className="panel__h">Motion — Ken Burns zoom</h2>
