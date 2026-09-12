@@ -292,14 +292,27 @@ body {
 .editor2 {
   flex: 1; min-height: 0; width: 100%;
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr) 320px;
+  grid-template-columns: var(--left-w, 340px) minmax(0, 1fr) 320px;
   grid-template-rows: minmax(0, 1fr) auto;
   grid-template-areas:
     "left center right"
     "timeline timeline timeline";
   gap: 12px;
 }
-.editor2__left { grid-area: left; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.editor2__left { grid-area: left; position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+
+/* Drag handle between the left panel and the preview (right panel stays fixed).
+   Sits in the 12px grid gap on the left panel's right edge. */
+.editor2__resizer {
+  position: absolute; top: 0; bottom: 0; right: -7px; width: 14px; z-index: 6;
+  cursor: col-resize; touch-action: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.editor2__resizer::after {
+  content: ""; width: 3px; height: 42px; border-radius: 2px;
+  background: var(--line); transition: background .12s;
+}
+.editor2__resizer:hover::after, .editor2__resizer.is-drag::after { background: var(--accent); }
 .editor2__center { grid-area: center; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
 .editor2__right { grid-area: right; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 2px; }
 .editor2__timeline { grid-area: timeline; }
@@ -327,12 +340,33 @@ body {
 .effects-soon__title { font-size: 14px; font-weight: 700; color: var(--text); }
 .effects-soon__sub { font-size: 12.5px; color: var(--faint); max-width: 240px; line-height: 1.5; }
 
+/* Square transition grid (CapCut-style tiles with a live mini-preview) */
+.trgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(82px, 1fr)); gap: 8px; }
+.trtile {
+  display: flex; flex-direction: column; gap: 4px; padding: 0;
+  background: none; border: none; cursor: pointer; font: inherit; min-width: 0;
+}
+.trtile__cv {
+  width: 100%; aspect-ratio: 1 / 1; display: block; background: #000;
+  border-radius: 8px; border: 1.5px solid var(--line);
+  transition: border-color .12s, box-shadow .12s;
+}
+.trtile:hover .trtile__cv { border-color: var(--muted); }
+.trtile.is-on .trtile__cv { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.trtile__label {
+  font-size: 11px; color: var(--muted); text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.trtile:hover .trtile__label { color: var(--text); }
+.trtile.is-on .trtile__label { color: var(--accent); }
+
 /* Responsive: stack the shell on narrow screens */
 @media (max-width: 860px) {
   .editor2 { display: flex; flex-direction: column; }
   .editor2__right { overflow: visible; }
   .leftpanel { flex: none; }
   .tabpanel { max-height: 60vh; }
+  .editor2__resizer { display: none; } /* no side-by-side columns to resize */
 }
 
 /* Panels */

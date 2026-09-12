@@ -4,6 +4,7 @@ import {
   TRANSITION_LIST, transitionOf,
   MIN_TRANSITION_DURATION, MAX_TRANSITION_DURATION,
 } from "../../lib/transitions";
+import TransitionTile from "./TransitionTile";
 
 export default function TransitionsPanel({
   clips, selectedIndex, selectedClip, selectedImageNum,
@@ -46,20 +47,15 @@ export default function TransitionsPanel({
         </span>
       </div>
 
-      <div className="transitions__chips">
-        {TRANSITION_LIST.map((tr) => {
-          const on = mixMode ? mixPicks.has(tr.id) : currentType === tr.id;
-          return (
-            <button
-              key={tr.id}
-              type="button"
-              className={`trchip ${on ? "is-on" : ""}`}
-              onClick={() => (mixMode ? toggleMix(tr.id) : pickType(tr.id))}
-            >
-              <span className="trchip__icon">{tr.icon}</span>{tr.label}
-            </button>
-          );
-        })}
+      <div className="trgrid">
+        {TRANSITION_LIST.map((tr) => (
+          <TransitionTile
+            key={tr.id}
+            tr={tr}
+            on={mixMode ? mixPicks.has(tr.id) : currentType === tr.id}
+            onClick={() => (mixMode ? toggleMix(tr.id) : pickType(tr.id))}
+          />
+        ))}
       </div>
 
       <label className="trdur">

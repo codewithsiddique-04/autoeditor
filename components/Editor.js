@@ -56,6 +56,38 @@ export default function Editor({
   useEffect(() => {
     try { setCoarse(window.matchMedia && window.matchMedia("(pointer: coarse)").matches); } catch { /* ignore */ }
   }, []);
+
+  // Draggable left panel: the right column is fixed (320px); dragging the divider
+  // resizes the left panel (≤ 30% of the editor) and the preview (≤ 60%). Persisted.
+  const editorRef = useRef(null);
+  const [leftW, setLeftW] = useState(() => {
+    try { const v = +localStorage.getItem("ae-leftw"); if (v > 0) return v; } catch { /* ignore */ }
+    return 340;
+  });
+  const draggingRef = useRef(false);
+  useEffect(() => { try { localStorage.setItem("ae-leftw", String(Math.round(leftW))); } catch { /* ignore */ } }, [leftW]);
+  const onResizeDown = useCallback((e) => {
+    draggingRef.current = true;
+    e.currentTarget.classList.add("is-drag");
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  }, []);
+  const onResizeMove = useCallback((e) => {
+    if (!draggingRef.current || !editorRef.current) return;
+    const r = editorRef.current.getBoundingClientRect();
+    const editorW = r.width;
+    const rightPx = 320, gaps = 24; // fixed right column + two 12px grid gaps
+    const leftMax = 0.30 * editorW;                       // left ≤ 30%
+    const leftMin = Math.max(240, 0.40 * editorW - rightPx - gaps); // keeps preview ≤ 60%
+    const lo = Math.min(leftMin, leftMax);
+    let x = e.clientX - r.left;
+    x = Math.max(lo, Math.min(leftMax, x));
+    setLeftW(x);
+  }, []);
+  const onResizeUp = useCallback((e) => {
+    draggingRef.current = false;
+    e.currentTarget.classList.remove("is-drag");
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+  }, []);
   // Gap "+" → pick a file to fill an empty slot / lead-in.
   const askAdd = useCallback((name) => {
     pending.current = name;
@@ -329,7 +361,7 @@ export default function Editor({
   const selectedImageNum = selectedClip && !selectedClip.gap ? imageClips.indexOf(selectedClip) + 1 : 0;
 
   return (
-    <section className="editor2">
+    <section className="editor2" ref={editorRef} style={{ "--left-w": `${leftW}px` }}>
       <div className="editor2__left">
         <LeftPanel
           tabs={[
@@ -362,6 +394,15 @@ export default function Editor({
             ) },
             { id: "effects", label: "Effects", node: <EffectsPanel /> },
           ]}
+        />
+        <div
+          className="editor2__resizer"
+          role="separator"
+          aria-orientation="vertical"
+          title="Drag to resize"
+          onPointerDown={onResizeDown}
+          onPointerMove={onResizeMove}
+          onPointerUp={onResizeUp}
         />
       </div>
 
