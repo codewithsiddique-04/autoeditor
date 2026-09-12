@@ -1,7 +1,9 @@
 import { useCallback, useRef } from "react";
 import {
   CAPTION_STYLE_LIST, CAPTION_SIZES, captionLineHeightDefault,
+  CAPTION_FONTS, captionFontFamily,
 } from "../../lib/captions";
+import CaptionStyleTile from "./CaptionStyleTile";
 
 export default function CaptionsPanel({
   captionCues, captionsOn, setCaptionsOn,
@@ -9,6 +11,8 @@ export default function CaptionsPanel({
   captionSize, setCaptionSize,
   captionLineHeight, setCaptionLineHeight,
   captionFontScale, setCaptionFontScale,
+  captionFont, setCaptionFont,
+  captionPosition, setCaptionPosition,
   captionName, captionError, onCaptionFile,
 }) {
   const capInputRef = useRef(null);
@@ -55,16 +59,42 @@ export default function CaptionsPanel({
 
             <div className="cap-body" aria-disabled={!captionsOn}>
               <div className="mini-h">Style</div>
-              <div className="transitions__chips">
+              <div className="captiles">
                 {CAPTION_STYLE_LIST.map((st) => (
-                  <button
+                  <CaptionStyleTile
                     key={st.id}
-                    type="button"
-                    className={`trchip ${captionStyle === st.id ? "is-on" : ""}`}
+                    st={st}
+                    fontFamily={captionFontFamily(captionFont)}
+                    on={captionStyle === st.id}
                     onClick={() => setCaptionStyle(st.id)}
+                  />
+                ))}
+              </div>
+
+              <div className="mini-h" style={{ marginTop: 12 }}>Font</div>
+              <div className="transitions__chips">
+                {CAPTION_FONTS.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    className={`trchip ${captionFont === f.id ? "is-on" : ""}`}
+                    style={{ fontFamily: `"${f.family}", system-ui, sans-serif` }}
+                    onClick={() => setCaptionFont(f.id)}
                   >
-                    {st.label}
+                    {f.label}
                   </button>
+                ))}
+              </div>
+
+              <div className="mini-h" style={{ marginTop: 12 }}>Position</div>
+              <div className="seg">
+                {[["top", "Top"], ["middle", "Middle"], ["bottom", "Bottom"]].map(([id, lbl]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={captionPosition === id ? "is-on" : ""}
+                    onClick={() => setCaptionPosition(id)}
+                  >{lbl}</button>
                 ))}
               </div>
 
