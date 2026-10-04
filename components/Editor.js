@@ -20,7 +20,7 @@ export default function Editor({
   aspect, setAspect, fps, setFps,
   renderQuality = "full", setRenderQuality, renderDims,
   onRender, onCancel, busy, progress, outUrl, error, warnings,
-  onWebCodecsTest, onWebCodecsCancel, wcBusy, wcProgress, wcPhase, wcAvailable, serverAvailable, wcEnabled, setWcEnabled,
+  onWebCodecsTest, onWebCodecsCancel, wcBusy, wcProgress, wcPhase, wcAvailable, serverAvailable,
   replaceImage, removeImage, fillGap, resizeBoundary,
   transitionsByName, transitionDuration, setTransition, applyTransitionAll, applyTransitionMix, setTransitionDuration,
   fadeIn, setFadeIn, fadeOut, setFadeOut,
@@ -527,7 +527,6 @@ export default function Editor({
           imageCount={imageCount} gapCount={gapCount} exportDuration={exportDuration} duration={duration} elapsed={elapsed}
           wcAvailable={wcAvailable} serverAvailable={serverAvailable} busy={busy} wcBusy={wcBusy}
           wcPhase={wcPhase} wcProgress={wcProgress} progress={progress}
-          wcEnabled={wcEnabled} setWcEnabled={setWcEnabled}
           onWebCodecsTest={onWebCodecsTest} onRender={onRender} onWebCodecsCancel={onWebCodecsCancel} onCancel={onCancel}
           outUrl={outUrl} error={error}
         />

@@ -5,7 +5,6 @@ export default function ExportPanel({
   renderQuality, setRenderQuality, renderDims, dims,
   imageCount, gapCount, exportDuration, duration, elapsed,
   wcAvailable, serverAvailable, busy, wcBusy, wcPhase, wcProgress, progress,
-  wcEnabled, setWcEnabled,
   onWebCodecsTest, onRender, onWebCodecsCancel, onCancel,
   outUrl, error,
 }) {
@@ -64,25 +63,6 @@ export default function ExportPanel({
         </div>
       )}
 
-      {/* Fast-render-only for now: the Fast/ffmpeg toggle is hidden and WebCodecs is
-          always used when available. The ffmpeg backend code is kept (just not exposed);
-          flip this back on to re-enable the toggle. */}
-      {false && wcAvailable && serverAvailable && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8, opacity: (busy || wcBusy) ? 0.5 : 1 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 600, opacity: 0.85 }}>⚡ Fast render</span>
-          <button
-            type="button"
-            className={`cap-switch ${wcEnabled ? "is-on" : ""}`}
-            onClick={() => setWcEnabled && setWcEnabled((v) => !v)}
-            disabled={busy || wcBusy}
-            aria-pressed={!!wcEnabled}
-            aria-label="Fast GPU render (WebCodecs)"
-            title="Render on the GPU via WebCodecs — faster for image-only projects (beta)"
-          >
-            <span className="cap-switch__box" />
-          </button>
-        </div>
-      )}
       {!(busy || wcBusy) ? (
         (wcAvailable || serverAvailable) ? (
           <button

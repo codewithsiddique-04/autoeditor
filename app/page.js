@@ -771,7 +771,6 @@ export default function Home() {
   }, []);
   const [wcOk, setWcOk] = useState(false);
   const [serverAvailable, setServerAvailable] = useState(false); // ffmpeg backend reachable?
-  const [wcEnabled, setWcEnabled] = useState(true); // WebCodecs on by default (desktop)
   const [wcProfile, setWcProfile] = useState(null); // resolved render profile (mp4)
   const [renderChecked, setRenderChecked] = useState(false); // capability probes done
   useEffect(() => {
@@ -813,10 +812,12 @@ export default function Home() {
     // Play inaudible audio for the duration so a backgrounded tab keeps rendering
     // at full speed (started here, inside the click gesture, so it's allowed).
     const stopKeepAwake = startKeepAwake();
+    // Hoisted so the catch block can reuse them for the server-ffmpeg fallback.
+    let exportClips, transitions, motions, trims, speeds, volumes;
     try {
-      const exportClips = trimClips(clips, exportDuration);
-      const transitions = exportClips.map((c) => transitionsByName[c.name] || "cut");
-      const motions = exportClips.map((c) => motionByName[c.name] || "none");
+      exportClips = trimClips(clips, exportDuration);
+      transitions = exportClips.map((c) => transitionsByName[c.name] || "cut");
+      motions = exportClips.map((c) => motionByName[c.name] || "none");
       // Per-clip video params (parallel to exportClips), same rule as the ffmpeg
       // path: long clip → trim (1x + in-point), short clip → fit (slow to fill).
       const modeOf = (c) => {
@@ -824,15 +825,15 @@ export default function Home() {
         if (!info) return "fit";
         return fitByName[c.name] || ((info.duration || 0) > (c.duration || 0) ? "trim" : "fit");
       };
-      const trims = exportClips.map((c) =>
+      trims = exportClips.map((c) =>
         (videoInfoByName[c.name] && modeOf(c) === "trim") ? (trimByName[c.name] || 0) : 0);
-      const speeds = exportClips.map((c) => {
+      speeds = exportClips.map((c) => {
         const info = videoInfoByName[c.name];
         if (!info) return 1;
         const dur = info.duration || 0, slot = c.duration || 0;
         return (modeOf(c) === "fit" && slot > 0 && dur > 0 && Math.abs(dur - slot) > 0.05) ? +(dur / slot).toFixed(4) : 1;
       });
-      const volumes = exportClips.map((c) =>
+      volumes = exportClips.map((c) =>
         Object.prototype.hasOwnProperty.call(videosByName, c.name)
           ? (volumeByName[c.name] == null ? 0.5 : volumeByName[c.name]) : 0);
       // Request the full 8 Mbps. The renderer decides the effective rate: a streamed
@@ -875,6 +876,34 @@ export default function Home() {
       }
     } catch (e) {
       if (writable) { try { await writable.abort(); } catch (_) {} } // discard partial file
+      // Desktop fallback: if the in-browser (WebCodecs) render failed for any reason
+      // other than a user cancel, and the local ffmpeg backend is available, finish
+      // the job there instead of handing the user a dead render. ffmpeg has none of
+      // the browser encoder's resolution/level limits and is a second, independent
+      // engine — the single biggest resilience win for the desktop app.
+      if (!(e && e.cancelled) && serverAvailable && exportClips && !wcCancelRef.current) {
+        try {
+          setWcPhase("Finishing on your computer");
+          logs.push(`fast render failed (${e && e.message ? e.message : e}) — falling back to the ffmpeg backend`);
+          const blob = await renderVideo({
+            clips: exportClips, imagesByName, videosByName, audioFile,
+            width: renderDims.width, height: renderDims.height, fps,
+            transitions, transitionDuration, motions, motionAmount, trims, volumes, speeds, fadeIn, fadeOut,
+            captions: captionsOn && captionCues.length ? captionCues : null,
+            captionStyle, captionSize, captionLineHeight, captionFontScale,
+            onProgress: setWcProgress,
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url; a.download = fileName; a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+          flashDone(`Downloaded “${fileName}” (finished on your computer)`);
+          return; // handled — skip the failure dialog
+        } catch (fe) {
+          if (fe && (fe.cancelled || (fe.name === "AbortError"))) return;
+          logs.push(`ffmpeg fallback also failed: ${fe && fe.message ? fe.message : fe}`);
+        }
+      }
       if (!(e && e.cancelled)) {
         const details = [
           `Error: ${e && e.message ? e.message : String(e)}`,
@@ -915,7 +944,8 @@ export default function Home() {
     }
   }, [clips, exportDuration, transitionsByName, motionByName, imagesByName, renderDims, fps, transitionDuration, motionAmount, effectId, effectIntensity, effectByName, sfxResolved, audioFile,
       videosByName, videoInfoByName, fitByName, trimByName, volumeByName, currentProject, flashDone, wcProfile,
-      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition]);
+      captionsOn, captionCues, captionStyle, captionSize, captionLineHeight, captionFontScale, captionFont, captionPosition,
+      serverAvailable, fadeIn, fadeOut]);
 
   // Browser can't export video (no H.264 WebCodecs, no render backend) — block the
   // whole app; there's no point letting them create projects they can't render.
@@ -1132,7 +1162,6 @@ export default function Home() {
           renderQuality={renderQuality} setRenderQuality={setRenderQuality} renderDims={renderDims}
           onWebCodecsTest={onWebCodecsTest} onWebCodecsCancel={onWebCodecsCancel}
           wcBusy={wcBusy} wcProgress={wcProgress} wcPhase={wcPhase} wcAvailable={wcOk} serverAvailable={serverAvailable}
-          wcEnabled={wcEnabled} setWcEnabled={setWcEnabled}
           onRender={onRender} onCancel={onCancel} busy={busy} progress={progress}
           outUrl={outUrl} error={error} warnings={warnings}
           replaceImage={replaceImage} removeImage={removeImage} fillGap={fillGap}
